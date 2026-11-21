@@ -66,17 +66,17 @@ function toAuthUser(row: UserRow): AuthUser {
 export type Identity = {
   siteMode: "selfhost" | "public";
   user: AuthUser | null;
-  /** 管理权限只认 ADMIN_TOKEN，与 OAuth 身份完全正交 */
+  /** Admin rights are gated by ADMIN_TOKEN only, fully orthogonal to the OAuth identity */
   isAdmin: boolean;
-  /** 管理区是否处于「没有可用密码」的锁定状态 */
+  /** Whether the admin area is locked out for lack of a usable password */
   adminLocked: boolean;
   access: AccessControl;
-  /** 关闭登录且勾了「同步暂停个人端」时，个人写接口一律拒绝 */
+  /** When login is closed and "pause personal side too" is checked, all personal write endpoints are rejected */
   personalSuspended: boolean;
 };
 
 /* ------------------------------------------------------------------ *
- * 会话
+ * Session
  * ------------------------------------------------------------------ */
 
 function isSecureRequest(c: Context): boolean {
@@ -133,11 +133,11 @@ function userFromSession(c: Context): AuthUser | null {
 }
 
 /**
- * 解析请求身份。管理权限判定顺序：
- *   1. public 站没配 ADMIN_TOKEN → 一律不是管理员（管理区锁死）
- *   2. selfhost 且没配 ADMIN_TOKEN → 视为管理员（向后兼容旧部署）
- *   3. Bearer 与 ADMIN_TOKEN 定长摘要相等 → 管理员
- * 绝不因为「登录了 LINUX DO」而提权。
+ * Resolve the request identity. Admin-rights decision order:
+ *   1. public site with no ADMIN_TOKEN configured → never admin (admin area locked)
+ *   2. selfhost with no ADMIN_TOKEN configured → treated as admin (backward compatible with old deployments)
+ *   3. Bearer equals the fixed-length digest of ADMIN_TOKEN → admin
+ * Never escalate to admin merely because the user "logged in with LINUX DO".
  */
 export function resolveIdentity(c: Context): Identity {
   const access = getAccessControl();
@@ -161,7 +161,7 @@ export function resolveIdentity(c: Context): Identity {
   };
 }
 
-/** 供路由内部取身份用（中间件已解析过一次，这里直接从 context 变量读） */
+/** Used by routes to read the identity (a middleware already resolved it; this just reads the context variable) */
 export function identityOf(c: Context): Identity {
   const cached = c.get("identity" as never) as Identity | undefined;
   return cached ?? resolveIdentity(c);
@@ -181,7 +181,7 @@ type LinuxdoProfile = {
   silenced: boolean;
 };
 
-/** avatar_template 是 `/user_avatar/linux.do/x/{size}.png` 这种相对路径，补成绝对地址 */
+/** avatar_template is a relative path like `/user_avatar/linux.do/x/{size}.png`; expand it to an absolute URL */
 function absolutizeAvatar(raw: unknown): string | null {
   if (typeof raw !== "string" || !raw.trim()) return null;
   const v = raw.trim();
@@ -210,7 +210,7 @@ function normalizeProfile(data: unknown): LinuxdoProfile | null {
 
 function oauthHttp(proxy?: string) {
   return createHttp({
-    // 优先用 OAuth 专用代理，避免为了登录把全站采集都塞进代理
+    // Prefer the OAuth-only proxy so logging in does not route all site-wide collection through the proxy
     proxy: proxy || config.linuxdoProxy || config.httpsProxy || config.httpProxy || undefined,
     gapMs: 0,
     timeoutMs: 15_000,
@@ -249,7 +249,7 @@ async function exchangeCode(code: string, redirect: string): Promise<string> {
     body: form.toString(),
   });
   if (res.status !== 200 || !res.data?.access_token) {
-    throw new Error(`换取 access_token 失败：${res.data?.error_description ?? res.data?.error ?? res.status}`);
+    throw new Error(`failed to exchange access_token: ${res.data?.error_description ?? res.data?.error ?? res.status}`);
   }
   return res.data.access_token;
 }
@@ -259,9 +259,9 @@ async function fetchProfile(accessToken: string): Promise<LinuxdoProfile> {
   const res = await http.json<unknown>(config.linuxdoUserUrl, {
     headers: { authorization: "Bearer " + accessToken, accept: "application/json" },
   });
-  if (res.status !== 200) throw new Error("读取 LINUX DO 用户信息失败：" + res.status);
+  if (res.status !== 200) throw new Error("failed to read LINUX DO user info: " + res.status);
   const profile = normalizeProfile(res.data);
-  if (!profile) throw new Error("LINUX DO 返回的用户信息无法识别");
+  if (!profile) throw new Error("unrecognizable user info returned by LINUX DO");
   return profile;
 }
 
@@ -294,11 +294,11 @@ function upsertUser(profile: LinuxdoProfile, invitedById: number | null): UserRo
     now,
   );
   const row = findUserByLinuxdoId(profile.id);
-  if (!row) throw new Error("创建用户失败");
+  if (!row) throw new Error("failed to create user");
   return row;
 }
 
-/** 新用户准入判定：返回 null 表示放行，否则返回应跳转的错误锚点 */
+/** New-user admission check: returns null to allow, otherwise the error anchor to redirect to */
 function rejectReason(profile: LinuxdoProfile, access: AccessControl): string | null {
   if (!profile.active) return "inactive";
   if (profile.silenced) return "silenced";
@@ -311,7 +311,7 @@ function frontendRedirect(c: Context, hash: string) {
 }
 
 export function registerAuthRoutes(app: Hono): void {
-  /** 前端启动时拉一次：站点形态、登录开关、公告、当前身份 */
+  /** Fetched once by the front end at startup: site mode, login toggle, announcement, current identity */
   app.get("/api/site/bootstrap", (c) => {
     const id = resolveIdentity(c);
     return c.json({
@@ -338,8 +338,8 @@ export function registerAuthRoutes(app: Hono): void {
   });
 
 /**
- * 登录准入的统一收尾：两个 OAuth 渠道（LINUX DO / GitHub）建号、邀请码、名额、封禁都在这里，
- * 差别只在「怎么拿到 profile」，避免两套逻辑各写一遍然后慢慢跑偏。
+ * Shared tail of the login admission flow: account creation, invite code, quota and ban for both
+ * OAuth channels (LINUX DO / GitHub) all happen here; only the way the profile is obtained differs, so the two paths cannot slowly drift apart.
  */
 function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Response {
   const access = getAccessControl();
@@ -352,7 +352,7 @@ function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Respo
   }
 
   if (access.registrationMode === "closed") return frontendRedirect(c, "register-closed");
-  // 名额上限：满了只挡新注册，老用户在上面已经放行
+  // Quota cap: when full only new signups are blocked; existing users were already allowed above
   if (admissionBlocked()) return frontendRedirect(c, "quota-full");
 
   if (access.registrationMode === "open") {
@@ -361,7 +361,7 @@ function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Respo
     return frontendRedirect(c, "home");
   }
 
-  // invite 模式：带码就直接建号核销，没带码先签一张 10 分钟的「待补码」凭证
+  // invite mode: with a code, create the account and redeem immediately; without one, issue a 10-minute "code pending" token
   if (invite) {
     const row = upsertUser(profile, null);
     const redeemed = redeemInviteCode(invite, row.id);
@@ -388,7 +388,7 @@ function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Respo
     if (!linuxdoConfigured) return frontendRedirect(c, "login-unconfigured");
     const invite = (c.req.query("invite") ?? "").trim().toUpperCase().slice(0, 32);
     const state = randomToken(16);
-    // state 与预填邀请码一起签名塞进短期 Cookie，回调时校验，避免 CSRF 与邀请码被中间人替换
+    // Sign the state together with the prefilled invite code into a short-lived cookie, verified on callback, to block CSRF and invite-code tampering
     setCookie(c, STATE_COOKIE, signToken({ state, invite }, 300), {
       httpOnly: true,
       sameSite: "Lax",
@@ -425,13 +425,13 @@ function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Respo
       const existing = findUserByLinuxdoId(profile.id);
       return finishLogin(c, profile, statePayload.invite);
     } catch (err) {
-      console.error("[auth] OAuth 回调失败:", err instanceof Error ? err.message : err);
+      console.error("[auth] OAuth callback failed:", err instanceof Error ? err.message : err);
       return frontendRedirect(c, "login-failed");
     }
   });
 
 
-  /** GitHub 登录：与 LINUX DO 共用准入链路，只是拿 profile 的方式不同 */
+  /** GitHub login: shares the admission chain with LINUX DO; only the way the profile is fetched differs */
   app.get("/api/auth/github/login", (c) => {
     const access = getAccessControl();
     if (!access.loginEnabled) return frontendRedirect(c, "login-disabled");
@@ -478,15 +478,15 @@ function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Respo
       });
       const tokenData = tokenJson.data;
       const accessToken = tokenData.access_token ?? "";
-      if (!accessToken) throw new Error(tokenData.error_description ?? "GitHub 未返回 access_token");
+      if (!accessToken) throw new Error(tokenData.error_description ?? "GitHub did not return access_token");
 
       const userRes = await http.json<{ id?: number; login?: string; name?: string | null; avatar_url?: string | null }>(config.githubUserUrl, {
         headers: { authorization: `Bearer ${accessToken}`, accept: "application/vnd.github+json", "user-agent": "freebie-radar" },
       });
       const gh = userRes.data;
-      if (!gh.id) throw new Error("GitHub 用户信息缺少 id");
+      if (!gh.id) throw new Error("GitHub user info is missing id");
 
-      // GitHub id 存成负数做命名空间，避免和 LINUX DO 的 id 撞车（两边的 id 空间互不相干）
+      // Store the GitHub id negated as a namespace so it never collides with a LINUX DO id (the two id spaces are unrelated)
       const profile: LinuxdoProfile = {
         id: -Math.abs(gh.id),
         username: gh.login ?? `gh_${gh.id}`,
@@ -498,28 +498,28 @@ function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Respo
       };
       return finishLogin(c, profile, statePayload.invite);
     } catch (err) {
-      console.error("[auth] GitHub 回调失败:", err instanceof Error ? err.message : err);
+      console.error("[auth] GitHub callback failed:", err instanceof Error ? err.message : err);
       return frontendRedirect(c, "login-failed");
     }
   });
-  /** 待补码用户提交邀请码：核销成功才真正建号，避免「先建号再失败」留下空用户 */
+  /** A code-pending user submits an invite code: create the account only after a successful redemption, so a failure does not leave an empty user */
   app.post("/api/auth/redeem-invite", async (c) => {
     const raw = getCookie(c, PENDING_COOKIE) ?? "";
     const pending = raw ? verifySignedToken<{ profile: LinuxdoProfile }>(raw) : null;
-    if (!pending?.profile) return c.json({ error: "注册凭证已过期，请重新登录 LINUX DO", expired: true }, 400);
+    if (!pending?.profile) return c.json({ error: "Registration token expired, please log in with LINUX DO again", expired: true }, 400);
     const body = (await c.req.json().catch(() => null)) as { code?: string } | null;
     const code = (body?.code ?? "").trim();
-    if (!code) return c.json({ error: "请输入邀请码" }, 400);
+    if (!code) return c.json({ error: "Enter an invite code" }, 400);
 
     const access = getAccessControl();
-    if (!access.loginEnabled) return c.json({ error: "站点当前已关闭登录" }, 403);
-    if (access.registrationMode === "closed") return c.json({ error: "站点当前已停止新用户注册" }, 403);
+    if (!access.loginEnabled) return c.json({ error: "Login is currently closed on this site" }, 403);
+    if (access.registrationMode === "closed") return c.json({ error: "New signups are currently closed on this site" }, 403);
     const blocked = admissionBlocked();
     if (blocked) return c.json({ error: blocked }, 403);
 
     const existing = findUserByLinuxdoId(pending.profile.id);
     if (existing) {
-      // 重复提交：已经建过号就直接登录，别让用户卡在补码页
+      // Duplicate submission: already created, just log in so the user is not stuck on the code page
       createSession(c, existing.id);
       deleteCookie(c, PENDING_COOKIE, { path: "/" });
       return c.json({ ok: true, user: toAuthUser(existing) });
@@ -541,11 +541,11 @@ function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Respo
     return c.json({ ok: true });
   });
 
-  /** 本地模拟登录：只在非生产 + 显式开启时可用，用来验证多账号隔离与双 Bot 推送 */
+  /** Local mock login: available only off-production and when explicitly enabled, to verify multi-account isolation and dual-Bot push */
   app.post("/api/auth/dev-login", async (c) => {
-    if (!devMockEnabled || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(c.req.url).hostname)) return c.json({ error: "本地模拟登录未开启" }, 403);
+    if (!devMockEnabled || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(c.req.url).hostname)) return c.json({ error: "local mock login is not enabled" }, 403);
     const access = getAccessControl();
-    if (!access.loginEnabled) return c.json({ error: "站点当前已关闭登录" }, 403);
+    if (!access.loginEnabled) return c.json({ error: "Login is currently closed on this site" }, 403);
     const body = (await c.req.json().catch(() => ({}))) as { preset?: string; trustLevel?: number; invite?: string };
     const preset = body.preset === "bob" ? "bob" : "alice";
     const linuxdoId = preset === "bob" ? 900002 : 900001;
@@ -553,7 +553,7 @@ function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Respo
     const profile: LinuxdoProfile = {
       id: linuxdoId,
       username,
-      name: preset === "bob" ? "测试账号 B" : "测试账号 A",
+      name: preset === "bob" ? "Test account B" : "Test account A",
       avatar_url: null,
       trust_level: Number.isFinite(Number(body.trustLevel)) ? Number(body.trustLevel) : 3,
       active: true,
@@ -561,15 +561,15 @@ function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Respo
     };
     const existing = findUserByLinuxdoId(linuxdoId);
     if (existing) {
-      if (existing.disabled === 1) return c.json({ error: "该测试账号已被停用" }, 403);
+      if (existing.disabled === 1) return c.json({ error: "This test account has been disabled" }, 403);
       upsertUser(profile, existing.invited_by_id ?? null);
       createSession(c, existing.id);
       return c.json({ ok: true, user: toAuthUser(existing) });
     }
-    if (access.registrationMode === "closed") return c.json({ error: "站点当前已停止新用户注册" }, 403);
+    if (access.registrationMode === "closed") return c.json({ error: "New signups are currently closed on this site" }, 403);
     const blocked = admissionBlocked();
     if (blocked) return c.json({ error: blocked }, 403);
-    // 邀请码模式下，本地模拟登录也走真实准入：带码直接核销，没带码就发「待补码」凭证
+    // In invite-code mode, local mock login also goes through real admission: with a code, redeem it; without one, issue a "code pending" token
     if (access.registrationMode === "invite") {
       const invite = (body.invite ?? "").trim();
       if (!invite) {
@@ -580,7 +580,7 @@ function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Respo
           secure: isSecureRequest(c),
           maxAge: 600,
         });
-        return c.json({ ok: false, needInvite: true, message: "站点开启了邀请码注册，请填写邀请码完成注册" });
+        return c.json({ ok: false, needInvite: true, message: "This site requires an invite code; enter one to finish signing up" });
       }
       const row = upsertUser(profile, null);
       const redeemed = redeemInviteCode(invite, row.id);
@@ -596,18 +596,18 @@ function finishLogin(c: Context, profile: LinuxdoProfile, invite: string): Respo
     return c.json({ ok: true, user: toAuthUser(row) });
   });
 
-  /** 个人 RSS Token 重置 */
+  /** Reset the personal RSS token */
   app.post("/api/me/rss-token/reset", (c) => {
     const id = identityOf(c);
-    if (!id.user) return c.json({ error: "需要登录" }, 401);
-    if (id.personalSuspended) return c.json({ error: "站点已暂停个人功能" }, 403);
+    if (!id.user) return c.json({ error: "Login required" }, 401);
+    if (id.personalSuspended) return c.json({ error: "Personal features are suspended on this site" }, 403);
     const token = randomToken(24);
     run("UPDATE users SET rss_token = ? WHERE id = ?", token, id.user.id);
     return c.json({ ok: true, rssToken: token });
   });
 }
 
-/** 按 rss_token 反查用户（RSS 用，不走 Cookie） */
+/** Look up a user by rss_token (for RSS, not via cookie) */
 export function userByRssToken(token: string): AuthUser | null {
   if (!token || token.length < 8) return null;
   const row = get<UserRow>("SELECT * FROM users WHERE rss_token = ?", token);
@@ -624,7 +624,7 @@ export function purgeExpiredSessions(): number {
   return Number(res.changes);
 }
 
-/** 个人状态批量读取：列表接口一次查完，避免逐条 N+1 */
+/** Batch-read personal state: the list endpoint reads it all in one query to avoid N+1 per row */
 export function loadUserStates(
   userId: number,
   itemIds: readonly number[],

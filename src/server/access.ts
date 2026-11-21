@@ -3,8 +3,8 @@ import { config, isPublicSite } from "./config.ts";
 import { generateInviteCode } from "./crypto.ts";
 
 /* ------------------------------------------------------------------ *
- * 运营配置：登录/注册开关、入站公告
- * 都放 settings 表，管理端热改，无需重启。
+ * Operational config: login/registration toggles, landing announcement.
+ * All stored in the settings table, hot-editable from admin, no restart needed.
  * ------------------------------------------------------------------ */
 
 const ACCESS_KEY = "access_control";
@@ -13,15 +13,15 @@ const ONBOARDING_KEY = "onboarding";
 export type RegistrationMode = "open" | "invite" | "closed";
 
 export type AccessControl = {
-  /** 网页登录入口总开关；关掉只影响「新登录」，已有用户默认不受影响 */
+  /** Master switch for the web login entry; turning it off only affects "new logins", existing users are unaffected by default */
   loginEnabled: boolean;
-  /** 关闭登录时是否连带暂停已登录用户的个人端（维护模式） */
+  /** Whether closing login also suspends the personal side of already-logged-in users (maintenance mode) */
   suspendUserSessionsOnClose: boolean;
-  /** 注册模式：开放 / 邀请码 / 停止新注册（老用户始终可登录） */
+  /** Registration mode: open / invite code / stop new signups (existing users can always log in) */
   registrationMode: RegistrationMode;
-  /** 最低 LINUX DO 信任等级 */
+  /** Minimum LINUX DO trust level */
   minTrustLevel: number;
-  /** 账号总数上限（0 = 不限）；满了老用户照常登录，只挡新注册 */
+  /** Total account cap (0 = unlimited); when full, existing users still log in, only new signups are blocked */
   maxUsers: number;
 };
 
@@ -29,19 +29,19 @@ export type Onboarding = {
   enabled: boolean;
   title: string;
   content: string;
-  /** 功能引导卡片（访客隔离 / 登录与个人 Bot / 公开 RSS） */
+  /** Feature onboarding cards (guest isolation / login and personal Bot / public RSS) */
   showGuideCards: boolean;
-  /** 版本号：站长点「重新弹出」时自增，前端据此决定弹不弹 */
+  /** Version number: incremented when the admin clicks "show again"; the front end uses it to decide whether to show the dialog */
   version: number;
 };
 
 const DEFAULT_ONBOARDING_CONTENT = [
-  "资源雷达把社区、游戏平台、软件限免站、GitHub、Reddit、Bluesky、Telegram 与自定义 RSS 的信息聚合到一起，",
-  "先过规则初筛与统一屏蔽词，再由 AI 语义定级分流，最后按你的规则推送到 Telegram。",
+  "Resource Radar aggregates info from communities, game platforms, free-software sites, GitHub, Reddit, Bluesky, Telegram and custom RSS,",
+  "first through rule-based prefiltering and a shared blocklist, then AI semantic grading, and finally pushed to Telegram by your rules.",
   "",
-  "· 不登录也能浏览全部公开内容，「不想看 / 收藏 / 已读」只存在你自己的浏览器里，不会影响别人。",
-  "· 用 LINUX DO 登录后可跨设备同步个人偏好，还能绑定自己的 Telegram Bot，按个人规则收推送。",
-  "· 每条资源都带原始链接，兑换码与截止时间请自行核对，本站只做聚合与筛选，不对第三方活动的有效性负责。",
+  "· Browse all public content without logging in; \"hide / star / read\" state lives only in your own browser and never affects others.",
+  "· Log in with LINUX DO to sync preferences across devices and bind your own Telegram Bot for pushes by your personal rules.",
+  "· Every resource carries its original link; verify redemption codes and deadlines yourself. This site only aggregates and filters and is not responsible for the validity of third-party campaigns.",
 ].join("\n");
 
 function numOr(v: unknown, fallback: number, min: number, max: number): number {
@@ -54,8 +54,8 @@ export function defaultAccessControl(): AccessControl {
   return {
     loginEnabled: isPublicSite,
     suspendUserSessionsOnClose: false,
-    // 公开站默认「邀请码注册」更保守：AI 一审成本 + 个人 Bot 推送都要花服务器出口，
-    // 站长想全开就一键切成 open。
+    // The public site defaults to invite-code registration as a safer choice: AI review plus personal Bot push both consume server resources,
+    // so an operator who wants it wide open can switch to open in one click.
     registrationMode: isPublicSite ? "invite" : "closed",
     minTrustLevel: config.linuxdoMinTrustLevel,
     maxUsers: 0,
@@ -106,24 +106,24 @@ export function saveAccessControl(patch: Partial<AccessControl>): AccessControl 
   return next;
 }
 
-/** 名额检查：maxUsers=0 视为不限；满了只挡新注册，老用户照常登录 */
+/** Quota check: maxUsers=0 means unlimited; when full only new signups are blocked, existing users still log in */
 export function userQuota(): { used: number; max: number; full: boolean } {
   const max = getAccessControl().maxUsers;
   const used = get<{ n: number }>("SELECT COUNT(*) AS n FROM users")?.n ?? 0;
   return { used, max, full: max > 0 && used >= max };
 }
 
-/** 新用户准入前的统一闸门；返回 null 表示可以放行 */
+/** Single gate before admitting a new user; returning null means allow */
 export function admissionBlocked(): string | null {
   const q = userQuota();
-  if (q.full) return `站点名额已满（${q.used}/${q.max}），暂时停止新用户注册`;
+  if (q.full) return `Site is full (${q.used}/${q.max}); new signups are temporarily closed`;
   return null;
 }
 export function getOnboarding(): Onboarding {
   const row = get<{ value: string }>("SELECT value FROM settings WHERE key = ?", ONBOARDING_KEY);
   const base: Onboarding = {
     enabled: true,
-    title: "欢迎来到资源雷达",
+    title: "Welcome to Resource Radar",
     content: DEFAULT_ONBOARDING_CONTENT,
     showGuideCards: true,
     version: 1,
@@ -143,7 +143,7 @@ export function getOnboarding(): Onboarding {
   }
 }
 
-/** bumpVersion=true 时版本号自增，让所有访客下次进站重新看到弹窗 */
+/** With bumpVersion=true the version is incremented so every visitor sees the dialog again on their next visit */
 export function saveOnboarding(patch: Partial<Onboarding> & { bumpVersion?: boolean }): Onboarding {
   const cur = getOnboarding();
   const next: Onboarding = {
@@ -163,7 +163,7 @@ export function saveOnboarding(patch: Partial<Onboarding> & { bumpVersion?: bool
 }
 
 /* ------------------------------------------------------------------ *
- * 邀请码
+ * Invite codes
  * ------------------------------------------------------------------ */
 
 export type InviteCode = {
@@ -244,21 +244,21 @@ export type RedeemResult =
   | { ok: false; error: string };
 
 /**
- * 原子核销：BEGIN IMMEDIATE 拿写锁 → 校验可用 → used_count+1 → 记核销人。
- * 条件全写在 UPDATE 的 WHERE 里，靠 changes===1 判断，杜绝并发超发。
+ * Atomic redemption: BEGIN IMMEDIATE takes the write lock → validate → used_count+1 → record redeemer.
+ * All conditions live in the UPDATE's WHERE and success is judged by changes===1, preventing concurrent over-issue.
  */
 export function redeemInviteCode(code: string, userId: number): RedeemResult {
   const normalized = code.trim().toUpperCase();
-  if (!normalized) return { ok: false, error: "请输入邀请码" };
+  if (!normalized) return { ok: false, error: "Enter an invite code" };
   return txImmediate<RedeemResult>(() => {
     const row = get<InviteCode>(
       "SELECT id, code, max_uses, used_count, disabled, note, expires_at, created_at FROM invite_codes WHERE code = ?",
       normalized,
     );
-    if (!row) return { ok: false, error: "邀请码不存在" };
-    if (row.disabled === 1) return { ok: false, error: "该邀请码已被停用" };
-    if (row.expires_at && row.expires_at <= new Date().toISOString()) return { ok: false, error: "该邀请码已过期" };
-    if (row.used_count >= row.max_uses) return { ok: false, error: "该邀请码已用完" };
+    if (!row) return { ok: false, error: "Invite code not found" };
+    if (row.disabled === 1) return { ok: false, error: "This invite code has been disabled" };
+    if (row.expires_at && row.expires_at <= new Date().toISOString()) return { ok: false, error: "This invite code has expired" };
+    if (row.used_count >= row.max_uses) return { ok: false, error: "This invite code has been used up" };
     const res = run(
       `UPDATE invite_codes SET used_count = used_count + 1
         WHERE id = ? AND disabled = 0 AND used_count < max_uses
@@ -266,7 +266,7 @@ export function redeemInviteCode(code: string, userId: number): RedeemResult {
       row.id,
       new Date().toISOString(),
     );
-    if (Number(res.changes) !== 1) return { ok: false, error: "该邀请码刚刚被用完，请换一个" };
+    if (Number(res.changes) !== 1) return { ok: false, error: "This invite code was just used up, pick another" };
     run(
       "INSERT INTO invite_redemptions (invite_id, user_id, redeemed_at) VALUES (?, ?, ?) ON CONFLICT(invite_id, user_id) DO NOTHING",
       row.id,
@@ -277,7 +277,7 @@ export function redeemInviteCode(code: string, userId: number): RedeemResult {
   });
 }
 
-/** 这个 LINUX DO 账号是否已经在等待补邀请码（重进时不重复建号） */
+/** Whether this LINUX DO account is already waiting to supply an invite code (do not recreate the account on re-entry) */
 export function findUserByLinuxdoId(linuxdoId: number) {
   return get<{
     id: number;

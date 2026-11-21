@@ -36,7 +36,7 @@ export function CodeChip({ code, onCopy }: { code: string; onCopy: (code: string
           ? "bg-deal-subtle text-deal"
           : "bg-code-subtle text-code hover:bg-amber-200/70")
       }
-      title="点击复制兑换码"
+      title="Click to copy the code"
     >
       {copied ? <Check size={11} /> : <Copy size={11} />}
       {code}
@@ -47,15 +47,15 @@ export function CodeChip({ code, onCopy }: { code: string; onCopy: (code: string
 function PriceBadge({ item, inline = false }: { item: Item; inline?: boolean }) {
   if (item.is_free === 1 || item.price === 0) {
     return inline ? (
-      <span className="shrink-0 text-[11.5px] font-semibold text-deal">免费</span>
+      <span className="shrink-0 text-[11.5px] font-semibold text-deal">Free</span>
     ) : (
       <span className="inline-flex items-center rounded bg-deal-subtle px-1.5 py-0.5 text-[11px] font-semibold text-deal">
-        免费
+        Free
       </span>
     );
   }
   if (typeof item.price === "number" && item.price > 0) {
-    const label = item.price < 1 ? "<1 元" : Math.round(item.price) + " 元内";
+    const label = item.price < 1 ? "<1" : "≤" + Math.round(item.price);
     return inline ? (
       <span className="shrink-0 text-[11.5px] font-semibold text-accent">{label}</span>
     ) : (
@@ -83,7 +83,7 @@ const OBTAIN_TEXT: Record<string, string> = {
   paid: "text-ink-500",
 };
 
-/** 获取方式徽章：非 free 的一律标出来，避免抽奖/试用/推广混进「完全白嫖」。 */
+/** Obtain-method badge: anything that is not free gets flagged, so lotteries, trials and promos are not passed off as fully free. */
 const KIND_STYLE: Record<string, string> = {
   deal: "bg-amber-50 text-amber-700",
   opensource: "bg-emerald-50 text-emerald-700",
@@ -93,8 +93,8 @@ const KIND_STYLE: Record<string, string> = {
 
 function KindBadge({ kind, category, inline = false }: { kind: string | null | undefined; category?: string | null; inline?: boolean }) {
   if (!kind || kind === "freebie" || kind === "noise") return null;
-  // 网盘/网课资源本身是「资源分享」，分类标签已经说清内容性质；
-  // kind 五类里没有资源形态，AI 只能落 info，再挂「行业资讯」就和「网盘资源」自相矛盾了
+  // Cloud-drive / course resources are "resource shares" by nature, and the category label already states that;
+  // the five kinds have no resource form, so the AI can only fall back to info, and tagging "industry news" would contradict "drive resource"
   if ((category === "pan" || category === "course") && (kind === "info" || kind === "news")) return null;
   const label = KIND_LABEL[kind];
   if (!label) return null;
@@ -135,7 +135,7 @@ function ObtainBadge({ obtain, inline = false }: { obtain: string | null | undef
   );
 }
 
-/** 默认的精致紧凑列表行：在纯白面板里用 1px 细线分隔，扫货效率最高。 */
+/** Default compact list row: hairlines separate rows in the plain white panel for the fastest scanning. */
 export function CompactRow({
   item,
   sourceName,
@@ -155,7 +155,7 @@ export function CompactRow({
   onOpen: (item: Item) => void;
   onQuickBlock: (item: Item) => void;
   onCopyCode: (code: string) => void;
-  /** 合并组：展开/收起同福利的其他来源 */
+  /** Merged group: expand/collapse the other sources reporting the same deal */
   onToggleRelated?: (id: number) => void;
   expanded?: boolean;
   showSummary?: boolean;
@@ -177,14 +177,14 @@ export function CompactRow({
         (topPick ? "border-l-2 border-l-deal " : "")
       }
     >
-      {/* 未读圆点 + 纯数字评分 */}
+      {/* Unread dot + numeric score */}
       <div className="flex shrink-0 items-center gap-2 pt-0.5 sm:pt-0">
         <span
           className={
             "h-[7px] w-[7px] rounded-full " +
             (item.read ? "border border-ink-300 bg-transparent" : "bg-accent")
           }
-          title={item.read ? "已读" : "未读"}
+          title={item.read ? "Read" : "Unread"}
         />
         <span
           className={
@@ -195,13 +195,13 @@ export function CompactRow({
                 ? "text-ink-700"
                 : "text-ink-400")
           }
-          title="综合评分"
+          title="Overall score"
         >
           {Math.round(item.score)}
         </span>
       </div>
 
-      {/* 主信息 */}
+      {/* Main info */}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <button
@@ -219,7 +219,7 @@ export function CompactRow({
           {showPrice && <ObtainBadge obtain={item.obtain} inline />}
           {matched.length > 0 && (
             <span className="rounded bg-code-subtle px-1.5 py-0.5 text-[11px] font-medium text-code">
-              命中：{matched.join("/")}
+              Matched: {matched.join("/")}
             </span>
           )}
           {(item.dupCount ?? 1) > 1 && (
@@ -230,15 +230,15 @@ export function CompactRow({
                 e.stopPropagation();
                 onToggleRelated?.(item.id);
               }}
-              title="同一福利被多个源报道，点击看全部来源"
+              title="Several sources report the same deal - click to see them all"
               className="rounded bg-brand-subtle px-1.5 py-0.5 text-[11px] font-medium text-accent hover:bg-ink-200/70"
             >
-              {expanded ? "收起" : `${item.dupCount} 个来源`}
+              {expanded ? "Collapse" : `${item.dupCount} sources`}
             </button>
           )}
           {item.blockedBy && (
             <span className="rounded bg-alert-subtle px-1.5 py-0.5 text-[11px] text-alert">
-              屏蔽：{item.blockedBy}
+              Blocked: {item.blockedBy}
             </span>
           )}
         </div>
@@ -263,7 +263,7 @@ export function CompactRow({
         {showSummary && item.ai?.reason && <p title={item.ai.reason} className="row-summary mt-1 text-[12px] leading-relaxed text-ink-500">{item.ai.reason}</p>}
       </div>
 
-      {/* 右端：兑换码 & 快捷操作 & 相对时间 */}
+      {/* Right side: codes, quick actions, relative time */}
       <div
         className="col-span-2 flex w-full items-center justify-between gap-2 sm:col-span-1 sm:w-auto sm:shrink-0 sm:justify-end"
         onClick={(e) => e.stopPropagation()}
@@ -282,7 +282,7 @@ export function CompactRow({
               if (!item.read) onPatch(item.id, { read: true });
             }}
             className="rounded-md p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-950 sm:p-1.5"
-            title="新标签打开原帖"
+            title="Open the original post in a new tab"
           >
             <ArrowUpRight size={15} />
           </a>
@@ -293,7 +293,7 @@ export function CompactRow({
               "rounded-md p-2 transition-colors hover:bg-ink-100 sm:p-1.5 " +
               (item.starred ? "text-code" : "text-ink-400 hover:text-ink-800")
             }
-            title={item.starred ? "取消收藏" : "收藏"}
+            title={item.starred ? "Remove star" : "Star"}
           >
             <Star size={14} fill={item.starred ? "currentColor" : "none"} />
           </button>
@@ -301,7 +301,7 @@ export function CompactRow({
             type="button"
             onClick={() => onQuickBlock(item)}
             className="rounded-md p-2 text-ink-400 transition-colors hover:bg-alert-subtle hover:text-alert sm:p-1.5"
-            title="加入屏蔽词 / 屏蔽"
+            title="Add to block words / block"
           >
             <Ban size={14} />
           </button>
@@ -309,7 +309,7 @@ export function CompactRow({
             type="button"
             onClick={() => onPatch(item.id, { status: item.status === "ignored" ? "active" : "ignored" })}
             className="rounded-md p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-800 sm:p-1.5"
-            title={item.status === "ignored" ? "恢复到列表" : "不想看，从列表移除（可在「已关闭」找回）"}
+            title={item.status === "ignored" ? "Restore to list" : "Hide from the list (recover it under Hidden)"}
           >
             {item.status === "ignored" ? <Eye size={14} /> : <EyeOff size={14} />}
           </button>
@@ -352,7 +352,7 @@ function CoverImage({
   );
 }
 
-/** 网格卡片视图（支持 2列 / 3列与封面图，无图条目保持紧凑纯文字卡片） */
+/** Grid card view (2 or 3 columns with cover images; items without an image stay as compact text cards) */
 export function ItemCard({
   item,
   sourceName,
@@ -421,7 +421,7 @@ export function ItemCard({
                 "h-[6px] w-[6px] shrink-0 rounded-full " +
                 (item.read ? "border border-ink-300 bg-transparent" : "bg-accent")
               }
-              title={item.read ? "已读" : "未读"}
+              title={item.read ? "Read" : "Unread"}
             />
             <span className="truncate font-medium text-ink-700">{sourceName(item.source_id)}</span>
             {item.category && (
@@ -463,7 +463,7 @@ export function ItemCard({
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]" onClick={(e) => e.stopPropagation()}>
             {matched.length > 0 && (
               <span className="rounded bg-code-subtle px-1.5 py-0.5 font-medium text-code">
-                命中：{matched.join("/")}
+                Matched: {matched.join("/")}
               </span>
             )}
             {codes.slice(0, 2).map((code) => (
@@ -477,10 +477,10 @@ export function ItemCard({
                   e.stopPropagation();
                   onToggleRelated?.(item.id);
                 }}
-                title="同一福利被多个源报道，点击看全部来源"
+                title="Several sources report the same deal - click to see them all"
                 className="rounded bg-brand-subtle px-1.5 py-0.5 font-medium text-accent hover:bg-ink-200/70"
               >
-                {expanded ? "收起" : `${item.dupCount} 个来源`}
+                {expanded ? "Collapse" : `${item.dupCount} sources`}
               </button>
             )}
             {item.ai?.reason && (
@@ -512,7 +512,7 @@ export function ItemCard({
                 if (!item.read) onPatch(item.id, { read: true });
               }}
               className="rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-950"
-              title="打开原文"
+              title="Open the original"
             >
               <ArrowUpRight size={14} />
             </a>
@@ -523,7 +523,7 @@ export function ItemCard({
                 "rounded-md p-1.5 hover:bg-ink-100 " +
                 (item.starred ? "text-amber-500" : "text-ink-400 hover:text-ink-800")
               }
-              title={item.starred ? "取消收藏" : "收藏"}
+              title={item.starred ? "Remove star" : "Star"}
             >
               <Star size={14} fill={item.starred ? "currentColor" : "none"} />
             </button>
@@ -531,7 +531,7 @@ export function ItemCard({
               type="button"
               onClick={() => onQuickBlock(item)}
               className="rounded-md p-1.5 text-ink-400 hover:bg-alert-subtle hover:text-alert"
-              title="屏蔽"
+              title="Block"
             >
               <Ban size={14} />
             </button>
@@ -539,7 +539,7 @@ export function ItemCard({
               type="button"
               onClick={() => onPatch(item.id, { status: item.status === "ignored" ? "active" : "ignored" })}
               className="rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-800"
-              title={item.status === "ignored" ? "恢复到列表" : "不想看，从列表移除（可在「已关闭」找回）"}
+              title={item.status === "ignored" ? "Restore to list" : "Hide from the list (recover it under Hidden)"}
             >
               <EyeOff size={14} />
             </button>
@@ -552,7 +552,7 @@ export function ItemCard({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-1 text-[11px] font-medium text-ink-500">
-              其他 {relatedItems.length} 条来源报道
+              {relatedItems.length} other sources reporting this
             </div>
             <ul className="space-y-1">
               {relatedItems.map((r) => (
@@ -576,7 +576,7 @@ export function ItemCard({
   );
 }
 
-/** 右侧滑出详情抽屉（按 Esc 关闭，↑/↓ 可在列表上下切换） */
+/** Right-side detail drawer (Esc closes it; up/down arrows move through the list) */
 export function ItemDetailDrawer({
   item,
   sourceName,
@@ -649,12 +649,12 @@ export function ItemDetailDrawer({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label="资源详情"
+        aria-label="Resource details"
         tabIndex={-1}
         className="drawer-enter drawer-shadow flex h-full w-full flex-col border-ink-200 bg-surface sm:max-w-[500px] sm:border-l"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 顶栏 */}
+        {/* Top bar */}
         <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3 sm:px-5 sm:py-3.5">
           <div className="flex items-center gap-1.5">
             <button
@@ -662,7 +662,7 @@ export function ItemDetailDrawer({
               disabled={!hasPrev}
               onClick={onPrev}
               className="rounded-lg border border-ink-200 p-1.5 text-ink-600 hover:bg-ink-100 disabled:opacity-30"
-              title="上一条 (↑)"
+              title="Previous (Up)"
             >
               <ChevronUp size={14} />
             </button>
@@ -671,7 +671,7 @@ export function ItemDetailDrawer({
               disabled={!hasNext}
               onClick={onNext}
               className="rounded-lg border border-ink-200 p-1.5 text-ink-600 hover:bg-ink-100 disabled:opacity-30"
-              title="下一条 (↓)"
+              title="Next (Down)"
             >
               <ChevronDown size={14} />
             </button>
@@ -681,16 +681,16 @@ export function ItemDetailDrawer({
             type="button"
             onClick={onClose}
             className="rounded-lg p-1.5 text-ink-500 hover:bg-ink-100 hover:text-ink-900"
-            title="关闭 (Esc)"
+            title="Close (Esc)"
           >
             <X size={16} />
           </button>
         </div>
 
-        {/* 内容区 */}
+        {/* Content */}
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
-          {loading && <p role="status" className="text-[12px] text-ink-500">正在加载完整正文…</p>}
-          {error && <div role="alert" className="rounded-lg border border-alert-border bg-alert-subtle p-3 text-[12px] text-alert">{error} <button type="button" onClick={onRetry} className="ml-2 underline">重试</button></div>}
+          {loading && <p role="status" className="text-[12px] text-ink-500">Loading the full text...</p>}
+          {error && <div role="alert" className="rounded-lg border border-alert-border bg-alert-subtle p-3 text-[12px] text-alert">{error} <button type="button" onClick={onRetry} className="ml-2 underline">Retry</button></div>}
           <CoverImage src={item.image_url} className="aspect-[16/9] w-full rounded-lg border border-ink-100" />
           <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
             <KindBadge kind={item.kind} category={item.category} />
@@ -702,7 +702,7 @@ export function ItemDetailDrawer({
             {item.kind !== "news" && item.kind !== "info" && <PriceBadge item={item} />}
             {item.kind !== "news" && item.kind !== "info" && <ObtainBadge obtain={item.obtain} />}
             <span className="rounded bg-ink-100 px-2 py-0.5 font-mono text-ink-700">
-              评分 {Math.round(item.score)}
+              Score {Math.round(item.score)}
             </span>
             {exp && (
               <span className={"inline-flex items-center gap-1 " + (exp.urgent ? "font-medium text-amber-700" : "text-ink-500")}>
@@ -725,18 +725,18 @@ export function ItemDetailDrawer({
             >
               <Sparkles size={14} className={item.ai.keep === false ? "text-ink-500" : "text-deal"} />
               <span>
-                <strong>{item.manualClassification ? "原 AI 说明：" : "AI 判定："}</strong>
+                <strong>{item.manualClassification ? "Original AI note:" : "AI verdict:"}</strong>
                 {!item.manualClassification && (item.ai.keep === false
-                  ? "低价值/水帖 · "
+                  ? "Low value / noise · "
                   : item.kind === "news"
-                    ? "重要新闻 · "
+                    ? "Top news · "
                     : item.kind === "info"
-                      ? "行业资讯 · "
+                      ? "Industry news · "
                       : item.kind === "opensource"
-                        ? "开源项目 · "
+                        ? "Open-source project · "
                         : item.kind === "deal"
-                          ? "特价好价 · "
-                          : "可领取福利 · ")}
+                          ? "Deal · "
+                          : "Claimable freebie · ")}
                 {item.ai.reason}
               </span>
             </div>
@@ -744,7 +744,7 @@ export function ItemDetailDrawer({
 
           {codes.length > 0 && (
             <div className="rounded-lg border border-code-border bg-code-subtle/70 p-3.5">
-              <div className="mb-2 text-[12px] font-medium text-amber-900">提取到的兑换码（点击复制）</div>
+              <div className="mb-2 text-[12px] font-medium text-amber-900">Extracted codes (click to copy)</div>
               <div className="flex flex-wrap gap-2">
                 {codes.map((code) => (
                   <CodeChip key={code} code={code} onCopy={onCopyCode} />
@@ -755,14 +755,14 @@ export function ItemDetailDrawer({
 
           {item.summary && (
             <div>
-              <div className="mb-1 text-[12px] font-medium text-ink-500">摘要</div>
+              <div className="mb-1 text-[12px] font-medium text-ink-500">Summary</div>
               <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap text-ink-700">{item.summary}</p>
             </div>
           )}
 
           {item.content && item.content !== item.summary && (
             <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
-              <div className="mb-1.5 text-[12px] font-medium text-ink-500">正文快照（原帖被删也能留档）</div>
+              <div className="mb-1.5 text-[12px] font-medium text-ink-500">Full-text snapshot (kept even if the original post is deleted)</div>
               <p className="max-h-[260px] overflow-auto text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-700">
                 {item.content}
               </p>
@@ -771,23 +771,23 @@ export function ItemDetailDrawer({
 
           <dl className="grid grid-cols-2 gap-3 rounded-lg border border-ink-200 bg-surface-hover p-3.5 text-[12px]">
             <div>
-              <dt className="text-ink-500">发布时间</dt>
+              <dt className="text-ink-500">Published</dt>
               <dd className="mt-0.5 font-mono text-ink-900">
                 {item.published_at ? item.published_at.replace("T", " ").slice(0, 19) : "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-ink-500">截止时间</dt>
+              <dt className="text-ink-500">Expires</dt>
               <dd className="mt-0.5 font-mono text-ink-900">
                 {item.expires_at ? item.expires_at.replace("T", " ").slice(0, 19) : "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-ink-500">收录时间</dt>
+              <dt className="text-ink-500">First seen</dt>
               <dd className="mt-0.5 font-mono text-ink-900">{item.first_seen_at.replace("T", " ").slice(0, 19)}</dd>
             </div>
             <div>
-              <dt className="text-ink-500">来源 ID</dt>
+              <dt className="text-ink-500">Source ID</dt>
               <dd className="mt-0.5 truncate font-mono text-ink-700">{item.source_id}</dd>
             </div>
           </dl>
@@ -803,7 +803,7 @@ export function ItemDetailDrawer({
           )}
         </div>
 
-        {/* 底部动作栏 */}
+        {/* Bottom action bar */}
         <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 bg-surface-hover px-4 py-3 sm:px-5 sm:py-3.5">
           <a
             href={item.url}
@@ -814,7 +814,7 @@ export function ItemDetailDrawer({
             }}
             className="inline-flex min-w-full flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-brand-hover sm:min-w-0 sm:py-2"
           >
-            {item.kind === "news" || item.kind === "info" ? "查看原文详情" : "打开原帖领取"} <ArrowUpRight size={14} />
+            {item.kind === "news" || item.kind === "info" ? "View original details" : "Open the post to claim"} <ArrowUpRight size={14} />
           </a>
           <button
             type="button"
@@ -826,14 +826,14 @@ export function ItemDetailDrawer({
                 : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100")
             }
           >
-            <Star size={14} fill={item.starred ? "currentColor" : "none"} /> {item.starred ? "已收藏" : "收藏"}
+            <Star size={14} fill={item.starred ? "currentColor" : "none"} /> {item.starred ? "Starred" : "Star"}
           </button>
           <button
             type="button"
             onClick={() => onPatch(item.id, { read: !item.read })}
             className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-lg border border-ink-200 bg-surface px-3 py-2.5 text-[13px] text-ink-700 hover:bg-ink-100 sm:grow-0 sm:basis-auto sm:py-2"
           >
-            <Eye size={14} /> {item.read ? "标未读" : "标已读"}
+            <Eye size={14} /> {item.read ? "Mark unread" : "Mark read"}
           </button>
           <button
             type="button"
@@ -843,7 +843,7 @@ export function ItemDetailDrawer({
             }}
             className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-lg border border-alert-border bg-alert-subtle px-3 py-2.5 text-[13px] text-alert hover:bg-red-100/80 sm:grow-0 sm:basis-auto sm:py-2"
           >
-            <ShieldAlert size={14} /> 屏蔽
+            <ShieldAlert size={14} /> Block
           </button>
           <button
             type="button"
@@ -852,9 +852,9 @@ export function ItemDetailDrawer({
               onClose();
             }}
             className="inline-flex grow basis-[calc(50%-0.25rem)] items-center justify-center gap-1 rounded-lg border border-ink-200 bg-surface px-3 py-2.5 text-[13px] text-ink-700 hover:bg-ink-100 sm:grow-0 sm:basis-auto sm:py-2"
-            title="单纯不想看，不进屏蔽词"
+            title="Just hide it, without adding a block word"
           >
-            <EyeOff size={14} /> 关闭
+            <EyeOff size={14} /> Hide
           </button>
         </div>
       </aside>
@@ -862,7 +862,7 @@ export function ItemDetailDrawer({
   );
 }
 
-/** 快捷屏蔽弹窗 */
+/** Quick block dialog */
 export function QuickBlockModal({
   item,
   sourceName,
@@ -892,7 +892,7 @@ export function QuickBlockModal({
       >
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2 text-[14.5px] font-semibold text-ink-950">
-            <ShieldAlert size={16} className="text-alert" /> 屏蔽处理
+            <ShieldAlert size={16} className="text-alert" /> Block handling
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1 text-ink-500 hover:bg-ink-100">
             <X size={15} />
@@ -905,7 +905,7 @@ export function QuickBlockModal({
 
         <div className="space-y-3">
           <div>
-            <div className="mb-1.5 text-[12px] text-ink-500">点选标题关键词快速加入屏蔽：</div>
+            <div className="mb-1.5 text-[12px] text-ink-500">Pick a title keyword to block it quickly:</div>
             <div className="flex flex-wrap gap-1.5">
               {candidates.map((c) => (
                 <button
@@ -927,20 +927,20 @@ export function QuickBlockModal({
 
           <div>
             <label className="mb-1 block text-[12px] text-ink-500">
-              屏蔽关键词（命中该词的新老条目都会隐藏，且不推 Telegram）
+              Block keyword (matching new and existing items are hidden and not pushed to Telegram)
             </label>
             <input
               value={pattern}
               onChange={(e) => setPattern(e.target.value)}
-              placeholder="输入要屏蔽的关键词…"
+              placeholder="Enter a keyword to block..."
               className="w-full rounded-lg border border-ink-200 bg-surface px-3 py-2 text-[13px] text-ink-950 outline-none focus:border-brand"
             />
           </div>
 
           <div className="flex flex-col gap-2 text-[12px] sm:flex-row">
             {[
-              { key: "all", label: "全部来源屏蔽" },
-              { key: item.source_id, label: "仅对「" + sourceName(item.source_id) + "」生效" },
+              { key: "all", label: "Block across all sources" },
+              { key: item.source_id, label: "Only for \"" + sourceName(item.source_id) + "\"" },
             ].map((o) => (
               <button
                 key={o.key}
@@ -967,7 +967,7 @@ export function QuickBlockModal({
               }}
               className="rounded-lg border border-ink-200 px-3 py-2 text-[12.5px] text-ink-600 hover:bg-ink-100"
             >
-              仅隐藏这一条
+              Hide just this one
             </button>
             <button
               type="button"
@@ -983,7 +983,7 @@ export function QuickBlockModal({
               }}
               className="rounded-lg bg-alert px-4 py-2 text-[12.5px] font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-40"
             >
-              加入屏蔽规则
+              Add block rule
             </button>
           </div>
         </div>

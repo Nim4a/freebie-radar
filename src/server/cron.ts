@@ -3,7 +3,7 @@ import { all } from "./db.ts";
 import { hasCookieConfiguredForSource } from "./cookie-store.ts";
 import { runSource } from "./collectors/index.ts";
 
-/** 极简 5 段 cron 匹配：分 时 日 月 周；支持 * , - /。 */
+/** Minimal 5-field cron matcher: minute hour day month weekday; supports * , - /. */
 export function matchCron(expr: string, date: Date, utc = false): boolean {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return false;
@@ -52,8 +52,8 @@ export function listDueSourceIds(): string[] {
 }
 
 /**
- * 按每个源自己的 interval_sec 轮询：到点就跑，串行执行避免打爆上游。
- * 送码类源设 60-120 秒，日报/清单/Cookie 托管源设半小时至数小时。
+ * Poll by each source's own interval_sec: run when due, serially, so upstreams are not hammered.
+ * Code-drop sources run every 60-120s; daily digest/listing/cookie-hosted sources every half hour to a few hours.
  */
 export function startIntervalScheduler(task: {
   log?: (m: string) => void;
@@ -71,11 +71,11 @@ export function startIntervalScheduler(task: {
         try {
           await runSource(id);
         } catch (err) {
-          log(`[cron] ${id} 失败: ${err instanceof Error ? err.message : String(err)}`);
+          log(`[cron] ${id} failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     } catch (err) {
-      log(`[cron] 调度异常: ${err instanceof Error ? err.message : String(err)}`);
+      log(`[cron] scheduler error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       busy = false;
     }
@@ -106,12 +106,12 @@ export function startScheduler(task: { collect: () => Promise<unknown>; daily: (
     if (key === lastKey) return;
     lastKey = key;
     if (config.enableScheduler && matchCron(config.collectCron, now)) {
-      log("[cron] 触发采集");
-      task.collect().catch((e) => log(`[cron] 采集失败: ${String(e)}`));
+      log("[cron] triggering collection");
+      task.collect().catch((e) => log(`[cron] collection failed: ${String(e)}`));
     }
     if (config.enableScheduler && matchCron(config.dailyCron, now)) {
-      log("[cron] 触发日报");
-      task.daily().catch((e) => log(`[cron] 日报失败: ${String(e)}`));
+      log("[cron] triggering daily digest");
+      task.daily().catch((e) => log(`[cron] daily digest failed: ${String(e)}`));
     }
   }, 30_000);
   log(`[cron] scheduler started collect="${config.collectCron}" daily="${config.dailyCron}"`);

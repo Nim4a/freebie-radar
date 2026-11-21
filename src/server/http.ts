@@ -33,7 +33,7 @@ function decode(bytes: Buffer, contentType: string): string {
     try {
       return new TextDecoder(charset).decode(bytes);
     } catch {
-      /* 落到 utf-8 */
+      /* fall back to utf-8 */
     }
   }
   const head = bytes.subarray(0, 400).toString("utf8");
@@ -61,9 +61,9 @@ async function getDispatcher(proxy: string): Promise<unknown> {
   return p;
 }
 /**
- * curl 优先：Node 的 undici 有独立 TLS 指纹，Cloudflare 会单独给它 403。
- * 实测 linux.do RSS：curl 200 / 511ms，node fetch 403 / "Just a moment..."。
- * 容器镜像里装了 curl；本地 Windows 开发时 CURL_OK=false，自动走 fetch。
+ * Prefer curl: Node's undici has its own TLS fingerprint, so Cloudflare returns 403 for it.
+ * Measured on linux.do RSS: curl 200 / 511ms, node fetch 403 / "Just a moment...".
+ * The container image ships curl; in local Windows dev CURL_OK=false, so it falls back to fetch.
  */
 const CURL_OK = (() => {
   try {
@@ -111,7 +111,7 @@ async function viaCurl(url: string, opts: FetchOptions, timeoutMs: number, proxy
       const text = out.toString("utf8");
       const m = /\n__STATUS__(\d+)\n__CT__([^\n]*)\n__URL__(.*)$/s.exec(text);
       if (!m) {
-        reject(new Error("curl 输出无法解析"));
+        reject(new Error("cannot parse curl output"));
         return;
       }
       const bodyBytes = out.subarray(0, out.length - Buffer.byteLength(m[0], "utf8"));
@@ -143,9 +143,9 @@ export function createHttp(options: { proxy?: string; timeoutMs?: number; gapMs?
   }
 
   /**
-   * 直连抓取。优先用 curl —— 不是图省事，是 Node 的 undici 有自己的 TLS 指纹，
-   * 像 linux.do 这种 Cloudflare 站点会给 curl 200、给 node fetch 403。
-   * curl 不可用（本地 Windows 开发）时回退到 fetch。
+   * Direct fetch. Prefers curl — not for convenience, but because Node's undici has its own
+   * TLS fingerprint: Cloudflare sites like linux.do return 200 to curl and 403 to node fetch.
+   * Falls back to fetch when curl is unavailable (local Windows dev).
    */
   async function raw(url: string, opts: FetchOptions = {}): Promise<HttpResponse> {
     await waitGap();
@@ -155,7 +155,7 @@ export function createHttp(options: { proxy?: string; timeoutMs?: number; gapMs?
       try {
         return await viaCurl(url, opts, timeout, proxy);
       } catch {
-        /* curl 失败就落到 fetch */
+        /* on curl failure fall back to fetch */
       }
     }
 
@@ -176,8 +176,8 @@ export function createHttp(options: { proxy?: string; timeoutMs?: number; gapMs?
     let doFetch: typeof fetch = fetch;
     if (proxy) {
       init.dispatcher = await getDispatcher(proxy);
-      // 与 ProxyAgent 同源：内置 undici 与包内 undici 版本不同，混用会抛
-      // InvalidArgumentError: invalid onRequestStart method
+      // Same origin as ProxyAgent: built-in undici and the bundled undici differ, so mixing them
+      // throws InvalidArgumentError: invalid onRequestStart method
       doFetch = ((await import("undici")) as unknown as { fetch: typeof fetch }).fetch;
     }
     try {

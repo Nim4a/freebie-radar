@@ -15,7 +15,7 @@ export type Item = {
   content: string | null;
   price: number | null;
   is_free: number;
-  /** 获取方式：free 直接白嫖 / conditional 有条件 / lottery 抽奖 / trial 试用 / promo 推广 / paid 需付费 */
+  /** Obtain mode: free = grab it directly / conditional / lottery / trial / promo / paid */
   obtain: string | null;
   matched: string[];
   blockedBy?: string | null;
@@ -30,7 +30,7 @@ export type Item = {
   ai: { keep?: boolean; reason?: string; category?: string; obtain?: string; quality?: number } | null;
   first_seen_at: string;
   last_seen_at: string;
-  /** 同一福利被多少个源报道（1 = 只有这一条） */
+  /** How many sources reported the same freebie (1 = only this one) */
   dupCount?: number;
   manualClassification?: { category: string | null; kind: string | null; note: string; updated_at: string } | null;
 };
@@ -176,13 +176,13 @@ export type PushPreview = {
   scanned: number;
   matched: number;
   rejectedBy?: Record<string, number>;
-  /** 够格「即时」的总条数（不受展示条数限制） */
+  /** Total count eligible for "instant" (not limited by the displayed count) */
   instantTotal: number;
-  /** 按每轮即时上限与小时额度，这一批实际能即时发出的条数 */
+  /** How many this batch can actually send instantly, given the per-round instant cap and hourly quota */
   sendableInstant: number;
-  /** 够格「攒批」的总条数（已含被即时上限挤过来的部分） */
+  /** Total count eligible for "batch" (already includes what the instant cap pushed over) */
   batchTotal: number;
-  /** 被即时上限挤进攒批队列的条数 */
+  /** How many the instant cap pushed into the batch queue */
   deferred: number;
   usedThisHour: number;
   caps: { maxPerInstant: number; maxPerHour: number; maxPerBatch: number; batchIntervalMin: number; budget: number };
@@ -204,14 +204,14 @@ export type PushPayload = {
   quiet: boolean;
 };
 
-/* --- AI 语义审核配置 --- */
+/* --- AI semantic review settings --- */
 
 export type AiSourceMode = "all" | "exclude" | "only";
 
 export type AiSettings = {
   enabled: boolean;
   baseUrl: string;
-  /** 只在本地表单里用；服务端返回的是打码值 */
+  /** Used only in the local form; the server returns a masked value */
   apiKey: string;
   model: string;
   maxItems: number;
@@ -224,13 +224,13 @@ export type AiSettings = {
   sourceMode: AiSourceMode;
   sourceIds: string[];
   extraPrompt: string;
-  /** 空字符串表示用内置默认 */
+  /** An empty string means use the built-in default */
   systemPrompt: string;
 learnFromFeedback: boolean;
   feedbackLimit: number;
-  /** AI 语义去重总开关 */
+  /** Master switch for AI semantic dedup */
   aiDedupEnabled: boolean;
-  /** 语义去重对比窗口（小时） */
+  /** Semantic dedup comparison window (hours) */
   aiDedupWindowHours: number;
   hasKey: boolean;
   keyHint: string;
@@ -333,7 +333,7 @@ export type AiPayload = {
   };
 };
 
-/* --- 数据保留策略 --- */
+/* --- Data retention policy --- */
 
 export type RetentionSettings = {
   itemDays: number;
@@ -353,11 +353,11 @@ export type PushLogItem = {
   ok: number;
   error: string | null;
   created_at: string;
-  /** 为什么推它：命中哪条规则、分数多少 */
+  /** Why it was pushed: which rule matched, and the score */
   reason: string | null;
 };
 
-/* --- 今日热点 --- */
+/* --- Today's hot topics --- */
 
 export type HotScope = "all" | "deals" | "news" | "info";
 export type HotWord = { w: string; n: number; prev: number; delta: number };
@@ -391,7 +391,7 @@ export type HotReport = {
   topNews?: HotTopItem[];
 };
 
-/* --- 来源质量榜 --- */
+/* --- Source quality leaderboard --- */
 
 export type SourceQuality = {
   id: string;

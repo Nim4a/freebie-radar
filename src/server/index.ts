@@ -25,15 +25,15 @@ import { reconcileFixedSourceCategories } from "./source-settings.ts";
 migrate();
 ensureSources();
 const rerouted = reconcileFixedSourceCategories();
-if (rerouted) console.log(`[sources] 固定分类已重整 ${rerouted} 条历史资源（未触发 AI 或推送）`);
-// 上次进程意外退出可能遗留 status='running' 的记录，启动时收口
+if (rerouted) console.log(`[sources] realigned fixed categories for ${rerouted} historical items (no AI or push triggered)`);
+// A previous unexpected exit may leave status='running' rows behind; close them out at startup
 run(
-  "UPDATE runs SET status = 'failed', finished_at = ?, error = COALESCE(error, '进程重启中断') WHERE status = 'running'",
+  "UPDATE runs SET status = 'failed', finished_at = ?, error = COALESCE(error, 'interrupted by process restart') WHERE status = 'running'",
   new Date().toISOString(),
 );
 const app = new Hono();
 registerSecurity(app);
-// JSON 接口动辄几十 KB，先压缩再发；/api/items?limit=100 从 75KB 降到 ~15KB
+// JSON responses run tens of KB, so compress before sending; /api/items?limit=100 drops from 75KB to ~15KB
 app.use("*", compress());
 app.use("*", logger((message, ...rest) => console.log(
   message.replace(/\/rss\/u\/[^?\s\u001b]+/g, "/rss/u/[redacted]").replace(/([?&](?:code|state|invite)=)[^&\s\u001b]+/g, "$1[redacted]"),
@@ -42,7 +42,7 @@ app.use("*", logger((message, ...rest) => console.log(
 
 app.get("/health", async (c) => {
   const row = getDb().prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;
-  // 一键更新后前端轮询 /health 等 commit 变化来判断「新版本真的起来了」
+  // After a one-click update the front end polls /health waiting for the commit to change, confirming the new build is really up
   const build = await getBuildInfo().catch(() => null);
   return c.json({
     ok: row?.ok === 1,
@@ -56,8 +56,8 @@ app.get("/health", async (c) => {
 
 registerApi(app);
 
-// Hono 的 serveStatic 的 root/path 都相对 process.cwd()，传绝对路径会拼出错误路径；
-// 另外带 hash 的 assets 应该长缓存，index.html 必须 no-store，否则发版后用户会拿到旧 HTML 白屏。
+// Hono's serveStatic resolves root/path relative to process.cwd(); an absolute path would produce a wrong path.
+// Hashed assets should be cached long-term, but index.html must be no-store or users get stale HTML (blank page) after a release.
 const webDistAbs = fileURLToPath(new URL("../../dist/web", import.meta.url));
 if (existsSync(webDistAbs)) {
   const relRoot = relative(process.cwd(), webDistAbs).split(sep).join("/") || ".";
@@ -74,7 +74,7 @@ if (existsSync(webDistAbs)) {
     "/*",
     serveStatic({
       root: relRoot,
-      // 命中 index.html 的响应必须不缓存，否则发版后浏览器会拿旧 HTML 去请求已删除的旧 JS
+      // Responses that hit index.html must never be cached, or after a release browsers fetch deleted old JS with stale HTML
       onFound: (p, c) => {
         if (p.endsWith(".html")) c.header("Cache-Control", "no-store, must-revalidate");
       },
@@ -90,20 +90,20 @@ if (existsSync(webDistAbs)) {
     }),
   );
 } else {
-  app.get("/", (c) => c.text("freebie-radar API 已启动。前端未构建，运行 pnpm build 或 pnpm dev:web。"));
+  app.get("/", (c) => c.text("freebie-radar API is running. Front end not built — run pnpm build or pnpm dev:web."));
 }
 
 if (config.enableScheduler) {
-  // 采集：每个源按自己的 interval_sec 轮询（linux.do 90 秒，RSS 15 分钟，GitHub 6 小时）
+  // Collection: each source polls on its own interval_sec (linux.do 90s, RSS 15min, GitHub 6h)
   startIntervalScheduler();
-  // 聚类缓存预热：公开列表要命中 40+ 个 (kind,category) 组合，冷启动单次要 4-5 秒。
-  // 延迟 5 秒等采集启动完，再在后台分批建索引，让第一个用户请求就命中缓存。
+  // Cluster cache warm-up: the public list hits 40+ (kind,category) combos, and a cold single pass takes 4-5s.
+  // Wait 5 seconds for collection to start, then build indexes in background batches so the first user request hits cache.
   setTimeout(() => { void warmClusterCache(); }, 2_000);
-  // 推送：攒批队列按 batchIntervalMin 定时合并发送（静默时段自动跳过）
+  // Push: the batch queue merges and sends on the batchIntervalMin timer (quiet hours are skipped automatically)
   startPushScheduler();
-  // 个人 Bot 攒批：各用户按自己的周期出队，与全局攒批互不干扰
+  // Per-user Bot batching: each user dequeues on their own schedule, independent of the global batch
   startUserPushScheduler();
-  // 日报：仍然按 DAILY_CRON 触发
+  // Daily digest: still triggered by DAILY_CRON
   startScheduler({
     collect: async () => undefined,
     daily: async () => {
@@ -111,30 +111,30 @@ if (config.enableScheduler) {
       const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       if (digestExists(day)) return;
       await runDaily({ date: now });
-      // 每日精选落库后，给开了「个人日报」的用户各发一份
+      // Once the daily picks are stored, send a copy to each user with "personal daily digest" enabled
       await pushUserDaily().catch((err) => {
-        console.error("[user-push] 个人日报失败:", err instanceof Error ? err.message : err);
+        console.error("[user-push] personal daily digest failed:", err instanceof Error ? err.message : err);
       });
     },
   });
 
-  // 数据清理：每天跑一次，按保留策略删掉过期条目与日志（收藏的永不删）
+  // Cleanup: run once a day, deleting expired items and logs per the retention policy (starred items are never deleted)
   const tickCleanup = () => {
     try {
       const cfg = getRetention();
       if (!cfg.auto) return;
       const r = runCleanup(cfg);
       const total = Object.values(r.deleted).reduce((a, b) => a + b, 0);
-      if (total > 0) console.log("[cleanup]", JSON.stringify(r.deleted), "剩余", r.remaining);
+      if (total > 0) console.log("[cleanup]", JSON.stringify(r.deleted), "remaining", r.remaining);
     } catch (err) {
-      console.error("[cleanup] 失败:", err instanceof Error ? err.message : err);
+      console.error("[cleanup] failed:", err instanceof Error ? err.message : err);
     }
   };
   tickCleanup();
-  // 过期的登录 Session 顺手清掉，避免 sessions 表无限增长
+  // Purge expired login sessions so the sessions table does not grow unbounded
   try {
     const n = purgeExpiredSessions();
-    if (n > 0) console.log("[auth] 清理过期会话", n, "条");
+    if (n > 0) console.log("[auth]", n, "expired sessions purged");
   } catch {
     /* ignore */
   }

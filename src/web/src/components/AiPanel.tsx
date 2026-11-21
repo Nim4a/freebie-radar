@@ -23,10 +23,10 @@ import { KIND_LABEL, OBTAIN_LABEL, categoryLabel, timeAgo } from "../lib/sources
 import type { AiPayload, AiSettings, AiSourceMode, AiStage, AiStats, Source } from "../types.ts";
 
 const STAGE_META: Record<AiStage, { label: string; cls: string }> = {
-  sync: { label: "推送前同步", cls: "bg-brand-subtle text-accent border-brand-border" },
-  queue: { label: "异步队列", cls: "bg-ink-100 text-ink-700 border-ink-200" },
-  backfill: { label: "历史补审", cls: "bg-code-subtle text-code border-code-border" },
-  test: { label: "连通测试", cls: "bg-deal-subtle text-deal border-deal-border" },
+  sync: { label: "Pre-push sync", cls: "bg-brand-subtle text-accent border-brand-border" },
+  queue: { label: "Async queue", cls: "bg-ink-100 text-ink-700 border-ink-200" },
+  backfill: { label: "Backfill", cls: "bg-code-subtle text-code border-code-border" },
+  test: { label: "Connectivity test", cls: "bg-deal-subtle text-deal border-deal-border" },
 };
 
 function fmtDuration(ms: number): string {
@@ -171,7 +171,7 @@ export function AiPanel({
   const activeJobs = st?.telemetry?.active ?? [];
   const isLiveActive = Boolean(backfilling || testing || st?.queue?.running || activeJobs.length > 0);
 
-  // 有任务运行时 750ms 高频刷新进度与实时判定流；空闲时 5s 静默同步后台采集结果
+  // While a job is running, refresh progress and the live verdict stream every 750 ms; when idle, silently sync background collection results every 5 s
   useEffect(() => {
     if (!data) return;
     let alive = true;
@@ -193,7 +193,7 @@ export function AiPanel({
     };
   }, [Boolean(data), isLiveActive]);
 
-  // 活动任务计时器：每秒平滑更新已运行秒数
+  // Active job timer: smoothly update the elapsed seconds
   useEffect(() => {
     if (!isLiveActive) return;
     const t = window.setInterval(() => setNowTick(Date.now()), 250);
@@ -217,7 +217,7 @@ export function AiPanel({
   }, [st?.recent, sampleFilter, sampleQuery, sourceName]);
 
   if (!data || !form || !st) {
-    return <div className="panel p-6 text-[13px] text-ink-500">正在读取 AI 配置…</div>;
+    return <div className="panel p-6 text-[13px] text-ink-500">Reading AI configuration...</div>;
   }
 
   const s = data.settings;
@@ -225,7 +225,7 @@ export function AiPanel({
   const keptPct = total ? Math.round((st.kept / total) * 100) : 0;
   const enabledSources = sources.filter((src) => src.enabled);
 
-  async function save(patch: Partial<AiSettings>, toastText = "AI 配置已保存") {
+  async function save(patch: Partial<AiSettings>, toastText = "AI settings saved") {
     setSaving(true);
     try {
       const r = await fetch("/api/ai", {
@@ -239,12 +239,12 @@ export function AiPanel({
         setForm((prev) => {
           if (!prev) return { ...j.settings };
           const next: Record<string, unknown> = { ...prev };
-          // 只回写本次 patch 提交的字段，其余未保存草稿（端点/模型/Key/提示词）保持用户输入。
-          // 之前整块 setForm({ ...j.settings }) 会把草稿冲成服务端旧值——点任意一个自动保存开关就丢 Key。
+          // Write back only the fields submitted in this patch; other unsaved drafts (endpoint / model / key / prompt) keep the user input.
+          // Writing the whole form with setForm({ ...j.settings }) used to clobber drafts with stale server values - toggling any auto-save switch lost the key.
           for (const key of Object.keys(patch)) {
             if (key in saved) next[key] = saved[key];
           }
-          // 本次提交的明文 Key 已经落库：清空输入框，让 keyHint 占位提示接手
+          // The plaintext key from this submit is already stored: clear the input and let the keyHint placeholder take over
           if (typeof patch.apiKey === "string" && patch.apiKey.trim() && !patch.apiKey.startsWith("••••")) {
             next.apiKey = "";
           }
@@ -253,7 +253,7 @@ export function AiPanel({
         reload();
         onNotify?.(toastText);
       } else {
-        onNotify?.("保存失败");
+        onNotify?.("Save failed");
       }
     } finally {
       setSaving(false);
@@ -280,8 +280,8 @@ export function AiPanel({
         body: JSON.stringify(draft),
       });
       setTest((await r.json()) as TestResult);
-      // 不再 reload()：重新拉 /api/ai 只会把未保存的草稿覆盖成服务端旧值；
-      // 测试不需要改配置，统计由 /api/ai/live 轮询（活动时 750ms）自行刷新。
+      // No reload() here: re-fetching /api/ai would only overwrite unsaved drafts with stale server values;
+      // the test does not change settings, and stats refresh themselves through /api/ai/live polling (750 ms while active).
     } finally {
       setTesting(false);
     }
@@ -313,7 +313,7 @@ export function AiPanel({
       });
       const j = (await r.json()) as { scanned: number; updated: number; movedFromOther: number };
       reload();
-      onNotify?.(`已扫描 ${j.scanned} 条「其它」，成功归类 ${j.movedFromOther} 条（零 Token）`);
+      onNotify?.(`Scanned ${j.scanned} "Other" items, reclassified ${j.movedFromOther} (zero tokens)`);
     } finally {
       setReclassifying(false);
     }
@@ -334,7 +334,7 @@ export function AiPanel({
       onNotify?.(
         j.skippedReason
           ? j.skippedReason
-          : `已比对 ${j.scanned} 条，合并 ${j.merged} 条重复（当前共 ${j.clusters} 个聚类）`,
+          : `Compared ${j.scanned} items, merged ${j.merged} duplicates (${j.clusters} clusters now)`,
       );
     } finally {
       setDeduping(false);
@@ -353,7 +353,7 @@ export function AiPanel({
 
   return (
     <div className="space-y-4">
-      {/* 1. 状态与测试/补审工具 */}
+      {/* 1. Status plus test / backfill tools */}
       <div className="panel space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-subtle text-brand">
@@ -361,27 +361,27 @@ export function AiPanel({
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-[15px] font-semibold text-ink-900">AI 语义审核引擎</h2>
+              <h2 className="text-[15px] font-semibold text-ink-900">AI semantic review engine</h2>
               {s.ready ? (
                 <span className="inline-flex items-center gap-1 rounded-md bg-deal-subtle px-1.5 py-0.5 text-[11px] font-medium text-deal">
-                  <CircleCheck size={11} /> 运行中
+                  <CircleCheck size={11} /> Running
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
-                  <AlertTriangle size={11} /> 未启用
+                  <AlertTriangle size={11} /> Not enabled
                 </span>
               )}
               {st.queue && (
                 <span className="rounded-md bg-ink-100 px-2 py-0.5 font-mono text-[11px] text-ink-600">
-                  异步队列：{st.queue.queued} 待审{st.queue.running ? "（运行中）" : ""} · 已处理 {st.queue.processed}
-                  {st.queue.dropped > 0 ? ` · 丢弃 ${st.queue.dropped}` : ""}
+                  Async queue: {st.queue.queued} pending{st.queue.running ? " (running)" : ""} · processed {st.queue.processed}
+                  {st.queue.dropped > 0 ? ` · dropped ${st.queue.dropped}` : ""}
                 </span>
               )}
             </div>
             <p className="mt-0.5 text-[12px] text-ink-500">
-              {s.baseUrl ? s.model + " @ " + s.baseUrl.replace(/^https?:\/\//, "") : "还没有配置端点"}
-              {s.hasKey ? " · Key " + s.keyHint : " · 未设置 Key"}
-              {" · 推送前等待/极速抢码时机请到「推送规则」设置"}
+              {s.baseUrl ? s.model + " @ " + s.baseUrl.replace(/^https?:\/\//, "") : "No endpoint configured yet"}
+              {s.hasKey ? " · Key " + s.keyHint : " · No key set"}
+              {" · Set pre-push wait and instant-claim timing under Push rules"}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -389,20 +389,20 @@ export function AiPanel({
               type="button"
               onClick={runTest}
               disabled={testing || !canTest}
-              title="直接用下方表单的端点、模型与提示词草稿发起测试"
+              title="Run a test with the endpoint, model and prompt drafts from the form below"
               className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100 disabled:opacity-50"
             >
               {testing ? <Loader2 size={13} className="animate-spin" /> : <FlaskConical size={13} />}
-              测试草稿配置
+              Test draft config
             </button>
           </div>
         </div>
 
-        {/* 补审 / 重审工具条 */}
+        {/* Backfill / re-review toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink-200 bg-surface-hover px-3.5 py-2.5">
           <div className="text-[12px] text-ink-700">
-            <span className="font-medium text-ink-900">历史库补审 / 重审：</span>
-            改完补充规则或提示词后，可立即拿历史条目复审验证
+            <span className="font-medium text-ink-900">Backfill / re-review history:</span>
+            After changing extra rules or prompts, re-review past items right away to verify them
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -410,18 +410,18 @@ export function AiPanel({
               onChange={(e) => setBackfillMode(e.target.value as BackfillMode)}
               className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1 text-[12px] text-ink-800 outline-none focus:border-brand"
             >
-              <option value="pending">仅审未审条目 (pending)</option>
-              <option value="recent">重审近期已入库 (校准分类/评分)</option>
-              <option value="rejected">复核已被 AI 拦截 (防误杀)</option>
+              <option value="pending">Unreviewed items only (pending)</option>
+              <option value="recent">Re-review recent items (calibrate category / score)</option>
+              <option value="rejected">Re-check items AI blocked (catch false positives)</option>
             </select>
             <select
               value={backfillLimit}
               onChange={(e) => setBackfillLimit(Number(e.target.value))}
               className="rounded-lg border border-ink-200 bg-surface px-2 py-1 font-mono text-[12px] text-ink-800 outline-none focus:border-brand"
             >
-              <option value={50}>50 条</option>
-              <option value={200}>200 条</option>
-              <option value={500}>500 条</option>
+              <option value={50}>50 items</option>
+              <option value={200}>200 items</option>
+              <option value={500}>500 items</option>
             </select>
             <button
               type="button"
@@ -430,18 +430,18 @@ export function AiPanel({
               className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1 text-[12px] font-medium text-white hover:bg-brand-hover disabled:opacity-50"
             >
               {backfilling ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-              立即执行
+              Run now
             </button>
 
             <button
               type="button"
               onClick={runReclassify}
               disabled={reclassifying}
-              title="按最新关键词规则零 Token 重算历史「其它」分类"
+              title="Recompute the historical Other category with the latest keyword rules (zero tokens)"
               className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-surface px-2.5 py-1 text-[12px] font-medium text-ink-700 hover:bg-ink-100 disabled:opacity-50"
             >
               {reclassifying ? <Loader2 size={12} className="animate-spin" /> : null}
-              重整分类 (0 Token)
+              Reclassify (0 tokens)
             </button>
           </div>
         </div>
@@ -455,7 +455,7 @@ export function AiPanel({
           >
             <div className="mb-2 flex items-center gap-2 font-medium">
               {test.ok ? <CircleCheck size={13} className="text-deal" /> : <CircleX size={13} className="text-red-600" />}
-              {test.ok ? "连通正常" : "调用失败"} · {test.model} · {test.ms} ms
+              {test.ok ? "Connection OK" : "Call failed"} · {test.model} · {test.ms} ms
               {test.error && <span className="font-normal text-red-700">{test.error}</span>}
             </div>
             {test.results.map((r) => (
@@ -490,23 +490,23 @@ export function AiPanel({
 
         {backfill && (
           <div className="rounded-lg border border-ink-200 bg-surface p-3 text-[12.5px] text-ink-700">
-            执行完成（{backfill.mode ?? "pending"}）：扫描 {backfill.scanned} 条，判定 {backfill.reviewed} 条（通过{" "}
-            {backfill.reviewed - backfill.rejected} / 拦掉 {backfill.rejected}）
+            Done ({backfill.mode ?? "pending"}): scanned {backfill.scanned}, judged {backfill.reviewed} (kept{" "}
+            {backfill.reviewed - backfill.rejected} / blocked {backfill.rejected})
             {backfill.skippedBlocked ? (
               <span className="text-ink-500">
                 {" "}
-                · 已跳过 {backfill.skippedBlocked} 条命中全局屏蔽词（省额度）
+                · skipped {backfill.skippedBlocked} items matching global block words (saves quota)
               </span>
             ) : null}
             {backfill.reviewed === 0 && (backfill.skippedBlocked ?? 0) > 0 && !backfill.error ? (
-              <span className="ml-1 text-ink-500">— 当前没有未被屏蔽的待审条目</span>
+              <span className="ml-1 text-ink-500">- no unblocked items are waiting for review</span>
             ) : null}
             {backfill.error && <span className="text-red-700"> · {backfill.error}</span>}
           </div>
         )}
       </div>
 
-      {/* 2. 实时审核台与执行流水 */}
+      {/* 2. Live review console and run log */}
       <div className="panel space-y-3 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -519,14 +519,14 @@ export function AiPanel({
               <span className="inline-flex h-2 w-2 rounded-full bg-deal" />
             )}
             <h3 className="text-[13.5px] font-semibold text-ink-900">
-              {isLiveActive ? "AI 实时审核进行中" : "AI 执行监控"}
+              {isLiveActive ? "AI review in progress" : "AI run monitor"}
             </h3>
             <span className="text-[11.5px] text-ink-500">
               {isLiveActive
-                ? "每完成一批请求自动刷新结论与进度"
+                ? "Verdicts and progress refresh after each batch"
                 : st.telemetry?.history?.length
-                  ? `最近记录 ${st.telemetry.history.length} 轮执行`
-                  : "等待下次采集或手动补审触发"}
+                  ? `${st.telemetry.history.length} recent runs recorded`
+                  : "Waiting for the next collection or a manual backfill"}
             </span>
           </div>
           {(st.telemetry?.history?.length ?? 0) > 0 && (
@@ -536,7 +536,7 @@ export function AiPanel({
               className="inline-flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[11.5px] text-ink-600 hover:bg-ink-100"
             >
               {showHistory ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              {showHistory ? "收起全部流水" : `最近执行流水 (${st.telemetry?.history?.length ?? 0})`}
+              {showHistory ? "Collapse full log" : `Recent run log (${st.telemetry?.history?.length ?? 0})`}
             </button>
           )}
         </div>
@@ -564,7 +564,7 @@ export function AiPanel({
                     </div>
                     <div className="flex items-center gap-2 font-mono text-[11.5px] tabular-nums text-ink-600">
                       <span>
-                        第 {Math.min(job.completedBatches + 1, job.totalBatches)}/{job.totalBatches} 批
+                        Batch {Math.min(job.completedBatches + 1, job.totalBatches)}/{job.totalBatches}
                       </span>
                       <span>·</span>
                       <span className="inline-flex items-center gap-1">
@@ -573,7 +573,7 @@ export function AiPanel({
                     </div>
                   </div>
 
-                  {/* 柔和流光进度条 */}
+                  {/* Soft shimmer progress bar */}
                   <div className="relative h-2 overflow-hidden rounded-full bg-white/80 ring-1 ring-brand-border/60">
                     <div
                       className="relative h-full overflow-hidden rounded-full bg-accent transition-[width] duration-300 ease-out"
@@ -586,17 +586,17 @@ export function AiPanel({
                   <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
                     <div className="flex flex-wrap items-center gap-3 font-mono tabular-nums">
                       <span className="text-ink-900">
-                        进度 {job.done}/{job.total}（{pct}%）
+                        Progress {job.done}/{job.total} ({pct}%)
                       </span>
-                      <span className="text-deal">通过 {job.kept}</span>
-                      <span className="text-alert">拦截 {job.rejected}</span>
-                      {job.failed > 0 && <span className="text-code">失败 {job.failed}</span>}
+                      <span className="text-deal">Kept {job.kept}</span>
+                      <span className="text-alert">Blocked {job.rejected}</span>
+                      {job.failed > 0 && <span className="text-code">Failed {job.failed}</span>}
                     </div>
                   </div>
 
                   {job.recentEvents.length > 0 && (
                     <div className="space-y-1 border-t border-brand-border/50 pt-2">
-                      <div className="text-[11px] font-medium text-ink-500">刚落库的判定</div>
+                      <div className="text-[11px] font-medium text-ink-500">Just stored verdicts</div>
                       {job.recentEvents.slice(0, 4).map((ev, idx) => (
                         <div
                           key={ev.title + idx}
@@ -639,15 +639,15 @@ export function AiPanel({
                     {run.sourceId ? sourceName(run.sourceId) : run.label}
                   </span>
                   <div className="flex items-center gap-2">
-                    <div className="h-1.5 w-14 overflow-hidden rounded-full bg-ink-200" title={`留存 ${run.kept} / 拦截 ${run.rejected}`}>
+                    <div className="h-1.5 w-14 overflow-hidden rounded-full bg-ink-200" title={`Kept ${run.kept} / blocked ${run.rejected}`}>
                       <div className="h-full bg-deal" style={{ width: passRatio + "%" }} />
                     </div>
                     <span className="font-mono text-[11.5px] tabular-nums text-ink-700">
-                      {run.reviewed} 条（<span className="text-deal">{run.kept}</span>/<span className="text-ink-500">{run.rejected}</span>）
+                      {run.reviewed} items (<span className="text-deal">{run.kept}</span>/<span className="text-ink-500">{run.rejected}</span>)
                     </span>
                   </div>
                   {run.skippedBlocked ? (
-                    <span className="font-mono text-[11px] text-ink-400">屏蔽跳过 {run.skippedBlocked}</span>
+                    <span className="font-mono text-[11px] text-ink-400">Block-skipped {run.skippedBlocked}</span>
                   ) : null}
                   {run.error ? (
                     <span className="max-w-[180px] truncate rounded bg-alert-subtle px-1.5 py-0.5 text-[11px] text-alert">
@@ -656,7 +656,7 @@ export function AiPanel({
                   ) : (
                     <span className="font-mono text-[11px] tabular-nums text-ink-500">
                       {fmtDuration(run.durationMs)}
-                      {run.ttfbAvgMs !== null ? ` · 首字 ${run.ttfbAvgMs}ms` : ""}
+                      {run.ttfbAvgMs !== null ? ` · first token ${run.ttfbAvgMs}ms` : ""}
                     </span>
                   )}
                   <span className="font-mono text-[11px] text-ink-400">{timeAgo(run.finishedAt)}</span>
@@ -667,17 +667,17 @@ export function AiPanel({
         )}
       </div>
 
-      {/* 3. 判定分布 */}
+      {/* 3. Verdict distribution */}
       <div className="panel p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Activity size={14} className="text-ink-500" />
-            <h3 className="text-[13.5px] font-semibold text-ink-900">判定分布</h3>
-            <span className="text-[11.5px] text-ink-500">共 {total} 条待/已审活跃条目</span>
+            <h3 className="text-[13.5px] font-semibold text-ink-900">Verdict distribution</h3>
+            <span className="text-[11.5px] text-ink-500">{total} active items pending or reviewed</span>
           </div>
           {(st.blockedSkipped ?? 0) > 0 && (
             <span className="text-[11.5px] text-ink-500">
-              另有 <span className="font-mono text-ink-700">{st.blockedSkipped}</span> 条命中全局屏蔽词，已免送 AI 省额度
+              <span className="font-mono text-ink-700">{st.blockedSkipped}</span> more matched global block words and skipped AI to save quota
             </span>
           )}
         </div>
@@ -687,19 +687,19 @@ export function AiPanel({
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div>
             <div className="font-mono text-[18px] font-semibold tabular-nums text-deal">{st.kept}</div>
-            <div className="text-[11.5px] text-ink-500">判定有效</div>
+            <div className="text-[11.5px] text-ink-500">Kept as valid</div>
           </div>
           <div>
             <div className="font-mono text-[18px] font-semibold tabular-nums text-ink-700">{st.rejected}</div>
-            <div className="text-[11.5px] text-ink-500">判定噪音</div>
+            <div className="text-[11.5px] text-ink-500">Judged noise</div>
           </div>
           <div>
             <div className="font-mono text-[18px] font-semibold tabular-nums text-ink-900">{st.pending}</div>
-            <div className="text-[11.5px] text-ink-500">真正待送审</div>
+            <div className="text-[11.5px] text-ink-500">Waiting for review</div>
           </div>
           <div>
             <div className="font-mono text-[18px] font-semibold tabular-nums text-ink-400">{st.blockedSkipped ?? 0}</div>
-            <div className="text-[11.5px] text-ink-500">屏蔽词跳过（省额度）</div>
+            <div className="text-[11.5px] text-ink-500">Block words skipped (saves quota)</div>
           </div>
         </div>
         {st.byCategory.length > 0 && (
@@ -713,33 +713,33 @@ export function AiPanel({
         )}
       </div>
 
-      {/* 3. 第一道规则初筛与送审范围控制 */}
+      {/* 3. First-pass rule filter and review scope */}
       <div className="panel space-y-4 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Filter size={15} className="text-brand" />
-            <h3 className="text-[13.5px] font-semibold text-ink-900">规则初筛与送审范围（省额度 · 提速度）</h3>
+            <h3 className="text-[13.5px] font-semibold text-ink-900">Rule pre-filter and review scope (saves quota · faster)</h3>
           </div>
-          <span className="text-[11.5px] text-ink-500">采集入库后，先过规则初筛再决定是否送入 AI</span>
+          <span className="text-[11.5px] text-ink-500">After collection, every item passes the rule pre-filter before anything is sent to AI</span>
         </div>
 
         <div className="grid gap-2.5 sm:grid-cols-2">
           <SwitchRow
-            label="启用入口噪音预拦截（规则初筛）"
-            hint="自动跳过求助/问价/游戏更新补丁等明显非福利帖，不送 AI 也不主动直推"
+            label="Enable entry noise pre-block (rule pre-filter)"
+            hint="Automatically skips help requests, price questions, game patch notes and other obvious non-deals; they are not sent to AI and never pushed"
             value={form.preFilterEnabled}
             onChange={(v) => {
               setForm({ ...form, preFilterEnabled: v });
-              void save({ preFilterEnabled: v }, v ? "已开启规则初筛" : "已关闭规则初筛（全量直通 AI）");
+              void save({ preFilterEnabled: v }, v ? "Rule pre-filter enabled" : "Rule pre-filter disabled (everything goes to AI)");
             }}
           />
           <SwitchRow
-            label="纯白嫖专源免送 AI 直通"
-            hint="Epic/Steam/GamerPower/CheapShark/ITAD/SharewareOnSale 等纯白嫖源直接判真福利省额度"
+            label="Freebie-only sources bypass AI"
+            hint="Pure-freebie sources such as Epic/Steam/GamerPower/CheapShark/ITAD/SharewareOnSale count as real deals right away, saving quota"
             value={form.skipFreebieSources}
             onChange={(v) => {
               setForm({ ...form, skipFreebieSources: v });
-              void save({ skipFreebieSources: v }, v ? "纯白嫖专源已设为免审直通" : "纯白嫖专源已恢复送 AI");
+              void save({ skipFreebieSources: v }, v ? "Freebie-only sources now bypass review" : "Freebie-only sources are sent to AI again");
             }}
           />
         </div>
@@ -747,18 +747,18 @@ export function AiPanel({
         <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
-              <div className="text-[12.5px] font-medium text-ink-900">AI 语义去重（自动）</div>
+              <div className="text-[12.5px] font-medium text-ink-900">AI semantic dedupe (automatic)</div>
               <div className="mt-0.5 text-[11px] leading-snug text-ink-500">
-开启后全自动运行：入库审核通过时比对一次，Telegram 推送前再比对一次。同一活动/事件即使各家措辞完全不同，也只保留 1 条、只推 1 次。
-                {st?.dedup ? ` 已合并 ${st.dedup.mergedItems} 条、${st.dedup.clusterCount} 个聚类。` : ""}
+Runs fully automatically once enabled: one comparison when an item passes review, and another right before the Telegram push. Even when every source words the same event differently, only 1 item is kept and pushed once.
+                {st?.dedup ? ` Merged ${st.dedup.mergedItems} items into ${st.dedup.clusterCount} clusters.` : ""}
                 {st?.dedup?.degraded && st.dedup.degraded.count > 0
-                  ? ` ⚠ 已降级 ${st.dedup.degraded.count} 次（最近：${st.dedup.degraded.lastReason ?? "未知"}），期间仅规则去重生效。`
+                  ? ` ⚠ Degraded ${st.dedup.degraded.count} times (latest: ${st.dedup.degraded.lastReason ?? "unknown"}); only rule-based dedupe ran.`
                   : ""}
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <label className="flex items-center gap-1 text-[11.5px] text-ink-600">
-                对比窗口
+                Compare window
                 <input
                   type="number"
                   min={6}
@@ -768,14 +768,14 @@ export function AiPanel({
                   onBlur={() => void save({ aiDedupWindowHours: form.aiDedupWindowHours })}
                   className="w-14 rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-center font-mono text-[12px]"
                 />
-                小时
+                hours
               </label>
               <button
                 type="button"
                 onClick={() => {
                   const next = !form.aiDedupEnabled;
                   setForm({ ...form, aiDedupEnabled: next });
-                  void save({ aiDedupEnabled: next }, next ? "已开启 AI 语义去重" : "已关闭 AI 语义去重");
+                  void save({ aiDedupEnabled: next }, next ? "AI semantic dedupe enabled" : "AI semantic dedupe disabled");
                 }}
                 className={
                   "rounded-lg border px-3 py-1 text-[12px] font-medium transition-colors " +
@@ -784,17 +784,17 @@ export function AiPanel({
                     : "border-ink-200 bg-ink-100 text-ink-600")
                 }
               >
-                {form.aiDedupEnabled ? "已开启" : "已关闭"}
+                {form.aiDedupEnabled ? "On" : "Off"}
               </button>
               <button
                 type="button"
                 onClick={() => void runDedup()}
                 disabled={deduping || !s.ready}
-                title="对近 N 小时已入库条目跑一次语义聚类，历史重复也会被折叠"
+                title="Run semantic clustering over items stored in the last N hours; older duplicates are folded too"
                 className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-surface px-2.5 py-1 text-[12px] font-medium text-ink-700 hover:bg-ink-100 disabled:opacity-50"
               >
                 {deduping ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                立即聚类去重
+                Cluster and dedupe now
               </button>
             </div>
           </div>
@@ -802,23 +802,23 @@ export function AiPanel({
             <div className="mt-1 text-[11.5px] text-ink-600">
               {dedupResult.skippedReason
                 ? dedupResult.skippedReason
-                : `已比对 ${dedupResult.scanned} 条，合并 ${dedupResult.merged} 条重复，当前共 ${dedupResult.clusters} 个聚类。`}
+                : `Compared ${dedupResult.scanned} items, merged ${dedupResult.merged} duplicates, ${dedupResult.clusters} clusters now.`}
             </div>
           )}
         </div>
 
 <div className="rounded-lg border border-ink-200 bg-surface-hover px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-600">
-          自定义拦截词已与「<span className="font-medium text-ink-900">订阅与屏蔽</span>」合并为统一规则：命中全局屏蔽词或正则的条目，同样会在入库送 AI 前直接跳过、节省审核额度。
+          Custom block words have been merged into <span className="font-medium text-ink-900">Follows and blocks</span> as one unified rule: items matching a global block word or regex are skipped before they reach AI, saving review quota.
         </div>
 
         <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[12.5px] font-medium text-ink-900">送审数据源范围</span>
+            <span className="text-[12.5px] font-medium text-ink-900">Sources sent for review</span>
             <div className="flex items-center gap-1.5">
               {[
-                { key: "all" as AiSourceMode, label: "全部启用源" },
-                { key: "exclude" as AiSourceMode, label: "排除指定源" },
-                { key: "only" as AiSourceMode, label: "仅审指定源" },
+                { key: "all" as AiSourceMode, label: "All enabled sources" },
+                { key: "exclude" as AiSourceMode, label: "Exclude selected sources" },
+                { key: "only" as AiSourceMode, label: "Selected sources only" },
               ].map((m) => (
                 <button
                   key={m.key}
@@ -865,27 +865,27 @@ export function AiPanel({
         </div>
       </div>
 
-      {/* 4. 模型连接、性能并发与提示词自定义 */}
+      {/* 4. Model connection, concurrency and prompt customization */}
       <div className="panel space-y-4 p-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-[13.5px] font-semibold text-ink-900">模型连接、并发性能与审核口径</h3>
+          <h3 className="text-[13.5px] font-semibold text-ink-900">Model connection, concurrency performance and review policy</h3>
           <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-800">
             <input
               type="checkbox"
               checked={form.enabled}
               onChange={(e) => {
                 setForm({ ...form, enabled: e.target.checked });
-                void save({ enabled: e.target.checked }, e.target.checked ? "已启用 AI 语义审核" : "已关闭 AI 语义审核");
+                void save({ enabled: e.target.checked }, e.target.checked ? "AI semantic review enabled" : "AI semantic review disabled");
               }}
               className="h-3.5 w-3.5 accent-brand"
             />
-            启用 AI 语义审核
+            Enable AI semantic review
           </label>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="block">
-            <span className="mb-1 block text-[12px] font-medium text-ink-700">API 端点（OpenAI 兼容）</span>
+            <span className="mb-1 block text-[12px] font-medium text-ink-700">API endpoint (OpenAI compatible)</span>
             <input
               value={form.baseUrl}
               onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
@@ -894,7 +894,7 @@ export function AiPanel({
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-[12px] font-medium text-ink-700">模型名</span>
+            <span className="mb-1 block text-[12px] font-medium text-ink-700">Model name</span>
             <input
               value={form.model}
               onChange={(e) => setForm({ ...form, model: e.target.value })}
@@ -904,22 +904,22 @@ export function AiPanel({
           </label>
           <label className="block">
             <span className="mb-1 block text-[12px] font-medium text-ink-700">
-              API Key {s.hasKey && <span className="font-normal text-ink-500">（当前 {s.keyHint}）</span>}
+              API Key {s.hasKey && <span className="font-normal text-ink-500">(current {s.keyHint})</span>}
             </span>
             <input
               type="password"
               value={(form.apiKey ?? "").startsWith("••••") ? "" : (form.apiKey ?? "")}
               onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-              placeholder={s.hasKey ? "已配置，留空保持不变" : "sk-..."}
+              placeholder={s.hasKey ? "Already configured; leave empty to keep it" : "sk-..."}
               className="w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 font-mono text-[12.5px] text-ink-900 outline-none focus:border-brand"
             />
           </label>
         </div>
 
-        {/* 性能参数 */}
+        {/* Performance settings */}
         <div className="grid gap-3 sm:grid-cols-4">
           <label className="block rounded-lg border border-ink-200 bg-surface-hover p-3">
-            <span className="mb-1 block text-[12px] font-medium text-ink-700">单次调用上限 (20~500)</span>
+            <span className="mb-1 block text-[12px] font-medium text-ink-700">Max items per call (20-500)</span>
             <input
               type="number"
               min={20}
@@ -931,7 +931,7 @@ export function AiPanel({
             />
           </label>
           <label className="block rounded-lg border border-ink-200 bg-surface-hover p-3">
-            <span className="mb-1 block text-[12px] font-medium text-ink-700">每批条数 (2~20)</span>
+            <span className="mb-1 block text-[12px] font-medium text-ink-700">Items per batch (2-20)</span>
             <input
               type="number"
               min={2}
@@ -942,7 +942,7 @@ export function AiPanel({
             />
           </label>
           <label className="block rounded-lg border border-ink-200 bg-surface-hover p-3">
-            <span className="mb-1 block text-[12px] font-medium text-ink-700">并发批数 (1~8)</span>
+            <span className="mb-1 block text-[12px] font-medium text-ink-700">Concurrent batches (1-8)</span>
             <input
               type="number"
               min={1}
@@ -953,7 +953,7 @@ export function AiPanel({
             />
           </label>
           <label className="block rounded-lg border border-ink-200 bg-surface-hover p-3">
-            <span className="mb-1 block text-[12px] font-medium text-ink-700">单批超时秒数 (5~60)</span>
+            <span className="mb-1 block text-[12px] font-medium text-ink-700">Batch timeout in seconds (5-60)</span>
             <input
               type="number"
               min={5}
@@ -966,25 +966,25 @@ export function AiPanel({
         </div>
 
         <div className="rounded-lg border border-ink-200 bg-surface-hover px-3.5 py-2 text-[11.5px] leading-relaxed text-ink-600">
-          当前分波节奏：每次 HTTP 请求打包 <span className="font-mono font-medium text-ink-900">{form.batchSize}</span> 条 ×{" "}
-          <span className="font-mono font-medium text-ink-900">{form.concurrency}</span> 并发 = 每波{" "}
-          <span className="font-mono font-medium text-ink-900">{form.batchSize * form.concurrency}</span> 条 · 采集后先同步审核前{" "}
-          <span className="font-mono font-medium text-ink-900">{s.syncPrePushLimit ?? 20}</span> 条再推（可在「推送规则」调整），超出部分进异步队列每波最多{" "}
-          <span className="font-mono font-medium text-ink-900">{Math.min(Math.max(form.batchSize * form.concurrency, 12), 48)}</span> 条 · 上方「单次调用上限」仅限制直接批调用，「历史补审 50/200/500」则由右侧下拉单独控制。
+          Current wave rhythm: each HTTP request packs <span className="font-mono font-medium text-ink-900">{form.batchSize}</span> items ×{" "}
+          <span className="font-mono font-medium text-ink-900">{form.concurrency}</span> concurrent = {" "}
+          <span className="font-mono font-medium text-ink-900">{form.batchSize * form.concurrency}</span> items per wave · after collection the first{" "}
+          <span className="font-mono font-medium text-ink-900">{s.syncPrePushLimit ?? 20}</span> are pushed after review (adjustable under Push rules); the rest join the async queue, at most{" "}
+          <span className="font-mono font-medium text-ink-900">{Math.min(Math.max(form.batchSize * form.concurrency, 12), 48)}</span> per wave · "Max items per call" only limits direct batch calls, while "Backfill 50/200/500" is controlled separately by the dropdown on the right.
         </div>
 
-        {/* 偏好自适应 */}
+        {/* Preference adaptation */}
         <div className="rounded-lg border border-ink-200 bg-surface-hover p-3.5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-[12.5px] font-medium text-ink-900">从收藏与关闭自动学习偏好</div>
+              <div className="text-[12.5px] font-medium text-ink-900">Learn preferences automatically from stars and hides</div>
               <div className="mt-0.5 text-[11px] text-ink-500">
-                自动提取最近收藏（正样本 {data.feedback?.positive ?? 0} 条）与手动关闭（负样本 {data.feedback?.negative ?? 0} 条）作为审核参考
+                Automatically uses the most recent starred items (positive samples: {data.feedback?.positive ?? 0}) and manual hides (negative samples: {data.feedback?.negative ?? 0}) as review references
               </div>
             </div>
             <div className="flex items-center gap-2">
               <label className="flex items-center gap-1 text-[11.5px] text-ink-600">
-                各取最近
+                Most recent
                 <input
                   type="number"
                   min={1}
@@ -993,21 +993,21 @@ export function AiPanel({
                   onChange={(e) => setForm({ ...form, feedbackLimit: Number(e.target.value) })}
                   className="w-12 rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-center font-mono text-[12px]"
                 />
-                条
+                items
               </label>
               <button
                 type="button"
                 onClick={() => setShowSamples((v) => !v)}
                 className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-surface px-2.5 py-1 text-[11.5px] text-ink-700 hover:bg-ink-100"
               >
-                {showSamples ? <ChevronUp size={12} /> : <ChevronDown size={12} />} 查看样本
+                {showSamples ? <ChevronUp size={12} /> : <ChevronDown size={12} />} View samples
               </button>
               <button
                 type="button"
                 onClick={() => {
                   const next = !form.learnFromFeedback;
                   setForm({ ...form, learnFromFeedback: next });
-                  void save({ learnFromFeedback: next }, next ? "已开启偏好自适应" : "已关闭偏好自适应");
+                  void save({ learnFromFeedback: next }, next ? "Preference adaptation enabled" : "Preference adaptation disabled");
                 }}
                 className={
                   "rounded-lg border px-3 py-1 text-[12px] font-medium transition-colors " +
@@ -1016,7 +1016,7 @@ export function AiPanel({
                     : "border-ink-200 bg-ink-100 text-ink-600")
                 }
               >
-                {form.learnFromFeedback ? "自动学习中" : "已关闭"}
+                {form.learnFromFeedback ? "Learning automatically" : "Off"}
               </button>
             </div>
           </div>
@@ -1024,44 +1024,44 @@ export function AiPanel({
           {showSamples && (
             <div className="mt-3 grid gap-2.5 border-t border-ink-200 pt-2.5 sm:grid-cols-2">
               <div>
-                <div className="mb-1 text-[11px] font-medium text-deal">注入的正样本（最近收藏）</div>
+                <div className="mb-1 text-[11px] font-medium text-deal">Injected positive samples (recently starred)</div>
                 <ul className="space-y-1 text-[11.5px] text-ink-700">
                   {(data.feedback?.positiveSamples ?? []).map((t, idx) => (
                     <li key={idx} className="truncate">
                       · {t}
                     </li>
                   ))}
-                  {!(data.feedback?.positiveSamples?.length) && <li className="text-ink-400">暂无收藏样本</li>}
+                  {!(data.feedback?.positiveSamples?.length) && <li className="text-ink-400">No starred samples yet</li>}
                 </ul>
               </div>
               <div>
-                <div className="mb-1 text-[11px] font-medium text-alert">注入的负样本（最近关闭）</div>
+                <div className="mb-1 text-[11px] font-medium text-alert">Injected negative samples (recently hidden)</div>
                 <ul className="space-y-1 text-[11.5px] text-ink-700">
                   {(data.feedback?.negativeSamples ?? []).map((t, idx) => (
                     <li key={idx} className="truncate">
                       · {t}
                     </li>
                   ))}
-                  {!(data.feedback?.negativeSamples?.length) && <li className="text-ink-400">暂无关闭样本</li>}
+                  {!(data.feedback?.negativeSamples?.length) && <li className="text-ink-400">No hidden samples yet</li>}
                 </ul>
               </div>
             </div>
           )}
         </div>
 
-        {/* 补充审核规则（推荐） */}
+        {/* Extra review rules (recommended) */}
         <label className="block">
           <div className="mb-1 flex items-center justify-between">
             <span className="text-[12px] font-medium text-ink-800">
-              补充审核规则（推荐 · 自动追加在系统默认口径后，不破坏 JSON 格式）
+              Extra review rules (recommended · appended after the system default, without breaking the JSON format)
             </span>
-            <span className="text-[11px] text-ink-500">可随时追加偏好，如「需要绑信用卡的判 false」「AI 模型免费额度一律留」</span>
+            <span className="text-[11px] text-ink-500">Add preferences any time, e.g. "mark false when a credit card is required", "always keep free AI model quotas"</span>
           </div>
           <textarea
             value={form.extraPrompt}
             onChange={(e) => setForm({ ...form, extraPrompt: e.target.value })}
             rows={3}
-            placeholder="例如：1. 需要企业认证/营业执照的活动判 keep=false；2. 开源免费 AI 接口/白嫖算力券优先给 quality=5..."
+            placeholder="e.g. 1. mark keep=false for offers that require a business license or company verification; 2. give quality=5 to open-source free AI APIs and free compute credits..."
             className="w-full rounded-lg border border-ink-200 bg-surface px-2.5 py-2 text-[12px] leading-relaxed text-ink-800 outline-none focus:border-brand"
           />
         </label>
@@ -1088,7 +1088,7 @@ export function AiPanel({
             className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-1.5 text-[12.5px] font-medium text-white hover:bg-brand-hover disabled:opacity-60"
           >
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-            保存配置
+            Save settings
           </button>
           <button
             type="button"
@@ -1096,14 +1096,14 @@ export function AiPanel({
             className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100"
           >
             <Zap size={13} />
-            {showPrompt ? "收起完整主提示词" : "高级：自定义完整主提示词"}
+            {showPrompt ? "Collapse full system prompt" : "Advanced: custom full system prompt"}
           </button>
           <button
             type="button"
             onClick={reload}
             className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink-700 hover:bg-ink-100"
           >
-            <RefreshCw size={13} /> 刷新
+            <RefreshCw size={13} /> Refresh
           </button>
         </div>
 
@@ -1111,11 +1111,11 @@ export function AiPanel({
           <div className="border-t border-ink-100 pt-3">
             <div className="mb-1 flex items-center justify-between">
               <span className="text-[12px] font-medium text-ink-700">
-                完整系统主提示词
+                Full system prompt
                 {s.promptIsDefault ? (
-                  <span className="ml-1 font-normal text-ink-500">（当前使用内置默认，留空可随时吃满版本更新）</span>
+                  <span className="ml-1 font-normal text-ink-500">(currently the built-in default; leave empty to keep picking up version updates)</span>
                 ) : (
-                  <span className="ml-1 font-normal text-brand">（已完全自定义覆盖）</span>
+                  <span className="ml-1 font-normal text-brand">(fully overridden by your custom prompt)</span>
                 )}
               </span>
               {!s.promptIsDefault && (
@@ -1123,11 +1123,11 @@ export function AiPanel({
                   type="button"
                   onClick={() => {
                     setForm({ ...form, systemPrompt: "" });
-                    void save({ systemPrompt: "" }, "已恢复内置主提示词");
+                    void save({ systemPrompt: "" }, "Built-in system prompt restored");
                   }}
                   className="text-[11.5px] font-medium text-brand hover:underline"
                 >
-                  恢复默认主提示词
+                  Restore default system prompt
                 </button>
               )}
             </div>
@@ -1141,19 +1141,19 @@ export function AiPanel({
         )}
       </div>
 
-      {/* 5. 最近判定样本 */}
+      {/* 5. Recent verdict samples */}
       <div className="panel p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <h3 className="text-[13.5px] font-semibold text-ink-900">最近判定样本</h3>
-            <span className="text-[11.5px] text-ink-500">按实际 AI 判定时间倒序，展示最近 {st.recent.length} 条</span>
+            <h3 className="text-[13.5px] font-semibold text-ink-900">Recent verdict samples</h3>
+            <span className="text-[11.5px] text-ink-500">Newest AI verdicts first, showing the latest {st.recent.length}</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-0.5 rounded-md border border-ink-200 bg-surface p-0.5 text-[11.5px]">
               {[
-                { key: "all" as const, label: `全部 ${st.recent.length}` },
-                { key: "kept" as const, label: `通过 ${st.recent.filter((r) => r.keep).length}` },
-                { key: "rejected" as const, label: `拦截 ${st.recent.filter((r) => r.keep === false).length}` },
+                { key: "all" as const, label: `All ${st.recent.length}` },
+                { key: "kept" as const, label: `Kept ${st.recent.filter((r) => r.keep).length}` },
+                { key: "rejected" as const, label: `Blocked ${st.recent.filter((r) => r.keep === false).length}` },
               ].map((tabItem) => (
                 <button
                   key={tabItem.key}
@@ -1173,7 +1173,7 @@ export function AiPanel({
               <input
                 value={sampleQuery}
                 onChange={(e) => setSampleQuery(e.target.value)}
-                placeholder="搜标题 / 理由 / 来源"
+                placeholder="Search title / reason / source"
                 className="w-40 rounded-md border border-ink-200 bg-surface py-1 pr-2 pl-6 text-[11.5px] text-ink-800 outline-none focus:border-brand"
               />
             </div>
@@ -1227,7 +1227,7 @@ export function AiPanel({
                     {typeof r.quality === "number" && (
                       <span className="rounded bg-brand-subtle px-1.5 py-0.5 font-mono text-accent">★{r.quality}</span>
                     )}
-                    <span className="font-mono text-ink-400">{Math.round(r.score)} 分</span>
+                    <span className="font-mono text-ink-400">{Math.round(r.score)} pts</span>
                     {r.reason && (
                       <span className={"ml-0.5 " + (r.keep ? "text-ink-600" : "text-alert/90")}>
                         · {r.reason}
@@ -1240,7 +1240,7 @@ export function AiPanel({
           ))}
           {!recentFiltered.length && (
             <div className="py-6 text-center text-[12.5px] text-ink-500">
-              {st.recent.length ? "没有匹配的样本" : "还没有判定记录"}
+              {st.recent.length ? "No matching samples" : "No verdicts yet"}
             </div>
           )}
         </div>

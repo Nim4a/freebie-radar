@@ -16,13 +16,13 @@ function CopyRow({ label, hint, url }: { label: string; hint: string; url: strin
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
             } catch {
-              /* 剪贴板不可用时用户可手动选中 */
+              /* Falls back to manual selection when the clipboard is unavailable */
             }
           }}
           className="inline-flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[11.5px] font-medium text-ink-700 hover:bg-ink-100"
         >
           {copied ? <Check size={12} className="text-deal" /> : <Copy size={12} />}
-          {copied ? "已复制" : "复制"}
+          {copied ? "Copied" : "Copy"}
         </button>
       </div>
       <p className="mt-1 text-[11px] leading-relaxed text-ink-500">{hint}</p>
@@ -34,8 +34,8 @@ function CopyRow({ label, hint, url }: { label: string; hint: string; url: strin
 }
 
 /**
- * RSS 订阅助手：把「当前筛选」直接变成一条订阅地址，
- * 登录用户还能拿到带个人屏蔽规则的专属地址。
+ * RSS helper: turns the current filters straight into a feed URL,
+ * signed-in users also get a personal feed with their own blocklist.
  */
 export function RssModal({
   boot,
@@ -58,54 +58,54 @@ export function RssModal({
           <div className="flex items-center gap-2">
             <Globe2 size={15} className="text-accent" />
             <div>
-              <h2 className="text-[15px] font-semibold text-ink-950">RSS 订阅</h2>
-              <p className="mt-0.5 text-[11.5px] text-ink-500">丢进任意阅读器即可，公开源不需要登录</p>
+              <h2 className="text-[15px] font-semibold text-ink-950">RSS feeds</h2>
+              <p className="mt-0.5 text-[11.5px] text-ink-500">Paste it into any reader — public feeds need no sign-in</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-900"
-            title="关闭"
+            title="Close"
           >
             <X size={14} />
           </button>
         </div>
 
         <div className="max-h-[62vh] space-y-2.5 overflow-auto px-5 py-4">
-          <CopyRow label="公开订阅（按当前筛选）" hint="套用全站屏蔽词与跨源去重，任何人都能订阅" url={publicUrl} />
+          <CopyRow label="Public feed (current filters)" hint="Applies the site-wide blocklist and cross-source dedupe; anyone can subscribe" url={publicUrl} />
           <CopyRow
-            label="公开订阅（真福利精选）"
-            hint="固定按「真福利」频道输出，不受当前筛选影响"
+            label="Public feed (verified freebie picks)"
+            hint="Always outputs the 'verified freebies' channel, regardless of the current filters"
             url={origin + "/rss.xml?preset=verified&limit=50"}
           />
 
           {user ? (
             <>
-              <div className="pt-1 text-[11.5px] font-medium text-ink-500">我的专属订阅</div>
+              <div className="pt-1 text-[11.5px] font-medium text-ink-500">My personal feeds</div>
               <CopyRow
-                label="个人订阅（常规）"
-                hint="自动排除你点过「不想看」的条目，并套用你的个人屏蔽词"
+                label="Personal feed (default)"
+                hint="Automatically excludes items you marked as not interested and applies your personal blocklist"
                 url={origin + "/rss/u/" + user.rssToken + ".xml"}
               />
               <CopyRow
-                label="个人订阅（按推送规则）"
-                hint="完全按你在「我的推送」里设的分数、分类、获取方式过滤"
+                label="Personal feed (by push rules)"
+                hint="Filters exactly by the score, category and obtain method you set under 'Personal push'"
                 url={origin + "/rss/u/" + user.rssToken + ".xml?mode=push"}
               />
               <CopyRow
-                label="个人订阅（只看关注词）"
-                hint="只输出命中你关注关键词的条目"
+                label="Personal feed (subscriptions only)"
+                hint="Outputs only items that match your subscription keywords"
                 url={origin + "/rss/u/" + user.rssToken + ".xml?mode=subs"}
               />
               <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-ink-500">
                 <Lock size={11} className="mt-0.5 shrink-0" />
-                这条链接本身就是凭据，别贴到公开场合；泄露了就到「我的」里重置 Token。
+                This link is the credential itself — never post it publicly. If it leaks, reset the token under 'My Account'.
               </p>
             </>
           ) : (
             <p className="rounded-md border border-ink-200 bg-surface-hover px-3 py-2 text-[11.5px] leading-relaxed text-ink-600">
-              登录后还能拿到带个人屏蔽规则的专属订阅地址。
+              Sign in to get a personal feed that applies your own blocklist.
             </p>
           )}
         </div>

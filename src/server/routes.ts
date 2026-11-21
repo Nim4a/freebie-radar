@@ -110,20 +110,20 @@ import {
 } from "../shared/taxonomy.ts";
 
 /**
- * 校验数据源上的分类/形态兜底提示。
- * 以前这里是自由字符串，手写错一个字就会被静默忽略，主页与数据源口径逐渐漂移。
+ * Validate the category/kind fallback hints configured on a source.
+ * These used to be free-form strings: a single typo was silently ignored and the home page drifted away from the source's intent.
  */
 function checkSourceHints(kindHint: unknown, categoryHint: unknown, fixedCategory?: unknown): string | null {
   if (fixedCategory !== undefined && fixedCategory !== null && (typeof fixedCategory !== "string" || (fixedCategory.trim() && !isCategory(fixedCategory.trim())))) {
-    return "固定分类必须是合法的小类 key；留空恢复自动分类";
+    return "Fixed category must be a valid subcategory key; leave empty to restore auto-categorization";
   }
   if (typeof kindHint === "string" && kindHint.trim()) {
     const v = kindHint.trim();
-    if (!isContentKind(v) || v === "noise") return `kindHint 只能是 ${KIND_ORDER.join("/")}`;
+    if (!isContentKind(v) || v === "noise") return `kindHint must be one of ${KIND_ORDER.join("/")}`;
   }
   if (typeof categoryHint === "string" && categoryHint.trim()) {
     const v = categoryHint.trim();
-    if (!isCategory(v)) return `categoryHint 必须是小类 key（${CATEGORY_KEYS.join("/")}）`;
+    if (!isCategory(v)) return `categoryHint must be a subcategory key (${CATEGORY_KEYS.join("/")})`;
   }
   return null;
 }
@@ -164,7 +164,7 @@ export type ItemRow = {
 // List payloads never select full snapshots. The drawer fetches content on demand.
 const LIST_COLUMNS = "id, source_id, external_id, url, url_key, title_key, title, SUBSTR(summary, 1, 1200) AS summary, author, category, image_url, kind, ai_quality, tags, codes, price, is_free, obtain, score, expires_at, published_at, status, starred, ai, read_at, pushed_at, first_seen_at, last_seen_at, canonical_id";
 
-/** 订阅命中的关键词（都转小写比较），用于前端高亮与筛选。 */
+/** Keywords matched by subscriptions (always compared lowercased), used by the front end for highlighting and filtering. */
 function matchKeywords(row: ItemRow, keywords: string[]): string[] {
   if (!keywords.length) return [];
   const text = (row.title + " " + (row.summary ?? "")).toLowerCase();
@@ -209,9 +209,9 @@ function shape(row: ItemRow, keywords: string[] = [], blockedBy: string | null =
 }
 
 /**
- * 公开站：把「个人收藏 / 已读」覆盖到列表结果上。
- * items 表里的 starred / read_at 是自建站的全局状态，公开站不能拿来给用户看，
- * 否则 A 的收藏会显示成 B 的收藏。
+ * Public site: overlay the viewer's personal "starred / read" state onto the list results.
+ * starred / read_at on the items table is global self-hosted state; the public site must not hand it to users,
+ * otherwise A's stars would show up as B's stars.
  */
 function applyUserStates<T extends { id: number; starred: boolean; read: boolean }>(list: T[], userId: number | null): T[] {
   if (!list.length) return list;
@@ -237,20 +237,20 @@ const SORTS: Record<string, string> = {
   price_asc: "CASE WHEN is_free = 1 THEN 0 WHEN price IS NOT NULL THEN price ELSE 999999 END ASC, score DESC",
 };
 /**
- * 跨源聚类的唯一入口：「N 个来源」徽标和展开列表必须用同一个候选池。
- * 池子 = 同一 (kind, category) 分组，与当前筛选条件无关：
- *   - game 类不设时间下限（喜加一活动寿命长，旧帖仍是同一福利）
- *   - 其它类只看近 CLUSTER_WINDOW_DAYS 天（更早的靠 TitleDeduper 的 48h 窗口也合不到一起）
- * 以前列表按「当前筛选结果的前 300 条」聚类、/related 按「全局 score 前 300 条」再聚一次，
- * 两个池子不同，于是出现「35 个来源、点开 0 条」。
+ * The single entry point for cross-source clustering: the "N sources" badge and the expanded list must share one candidate pool.
+ * Pool = one (kind, category) group, independent of the current filters:
+ * - the game kind has no lower time bound (giveaway campaigns live long; an old post is still the same freebie)
+ * - other kinds only look back CLUSTER_WINDOW_DAYS days (older rows are not merged by TitleDeduper's 48h window either)
+ * The list used to cluster "the first 300 rows of the current filter result" while /related clustered "the top 300 by global score",
+ * so the two pools disagreed and the UI showed "35 sources" but 0 rows when expanded.
  */
 const CLUSTER_WINDOW_DAYS = 3;
-// 900 条池子 × 每次请求命中的几十个 (kind,category) 组合 = 单次请求要建几十个聚类索引，
-// 2 核机器上直接把 /api/items 拖到 6-9 秒。降到 300 后徽标精度基本不变（同组内 300 条已够数来源），
-// 但索引构造成本降到三分之一。
+// A 900-row pool x the dozens of (kind,category) combos a request touches = dozens of cluster indexes built per request,
+// which pushed /api/items to 6-9s on a 2-core box. At 300 the badge accuracy is basically unchanged (300 rows per group are enough to count sources),
+// while index construction cost drops to a third.
 const CLUSTER_POOL_LIMIT = 150;
 
-/** 聚类只需要这几列：items.content / raw 是整篇正文，整池 900 行一起取会把单次请求拖到几百毫秒。 */
+/** Clustering only needs these columns: items.content / raw hold the full page body, and pulling all 900 pool rows would push every request into the hundreds of milliseconds. */
 type ClusterPoolRow = {
   id: number;
   title: string;
@@ -296,8 +296,8 @@ function buildClusterIndex(rows: readonly ClusterPoolRow[]): ClusterIndex {
   }));
   const deduper = new TitleDeduper(entries, [], { maxGapHours: 48 });
 
-  // TitleDeduper 只认标题文本，不认落库的 title_key；而 SQL 折叠是按 title_key 做的。
-  // 这里再按 title_key 补一次并查集，保证「列表折成一条」和「徽标算几个来源」用的是同一套分组。
+  // TitleDeduper only looks at title text, not the stored title_key, while the SQL collapse groups by title_key.
+  // So run one more union-find over title_key here, so "collapse the list to one row" and "count sources for the badge" use the same grouping.
   const parent = new Map<number, number>();
   const find = (x: number): number => {
     let cur = x;
@@ -347,24 +347,24 @@ function clusterSince(): string {
 }
 
 /**
- * 分组聚类索引带缓存：同一 (kind, category) 的池子在一次请求里被复用，跨请求也不必重算。
- * 用「条目数 + 最大 id + 最近一次 AI 审核时间」当版本号，入库或补审写入 canonical 后自动失效。
+ * Group cluster indexes are cached: the same (kind, category) pool is reused within a request and needs no recompute across requests either.
+ * The version key is "row count + max id + last AI review time", so ingesting or re-reviewing a canonical invalidates it automatically.
  */
 /**
- * 聚类索引缓存：按 (kind, category) 分组缓存，5 分钟 TTL。
+ * Cluster index cache: keyed by (kind, category) group, 5-minute TTL.
  *
- * 之前用 dbRevision() 当失效信号——采集进程每秒都在写库，导致缓存几乎每个请求都被全清，
- * 而全部频道一次要重建几十个分组的索引（每个 300 条跑 TitleDeduper），冷启动单次 5-6 秒。
- * 现在改成 TTL：一次重建后 5 分钟内都命中，实测同一请求从 5.5s 降到 4ms。
- * 「N 个来源」徽标最多延迟 5 分钟，对展示无影响。
+ * It used to key off dbRevision() as the invalidation signal, but the collector writes to the DB every second, so nearly every request flushed the whole cache,
+ * and all channels at once rebuild dozens of group indexes (300 rows each through TitleDeduper), so a cold start cost 5-6s.
+ * Now it is a TTL: after one rebuild everything hits for 5 minutes; the same request went from 5.5s to 4ms in testing.
+ * The "N sources" badge lags at most 5 minutes, which does not affect presentation.
  */
 const CLUSTER_CACHE_TTL_MS = 5 * 60_000;
 const clusterIndexCache = new Map<string, { index: ClusterIndex; builtAt: number }>();
 
 /**
- * 后台预热聚类缓存：启动后把库里所有 (kind, category) 组合的索引先建好。
- * 全部频道单次请求要命中 40+ 个组合，每个组合建索引约 100ms，冷启动就是 4-5 秒。
- * 预热放在后台分批跑，用户第一个请求就能命中缓存。
+ * Warm the cluster cache in the background: build indexes for every (kind, category) combo in the database right after startup.
+ * All channels in one request touch 40+ combos at roughly 100ms per combo, so a cold start is 4-5 seconds.
+ * Warming runs in batches in the background so the user's first request already hits the cache.
  */
 export async function warmClusterCache(log: (msg: string) => void = console.log): Promise<void> {
   const combos = all<{ kind: string | null; category: string | null }>(
@@ -379,14 +379,14 @@ export async function warmClusterCache(log: (msg: string) => void = console.log)
     try {
       clusterIndexCache.set(key, { index: buildClusterIndex(loadClusterPool(kind, category, clusterSince())), builtAt: Date.now() });
       built += 1;
-    } catch { /* 单个分组失败不影响其它 */ }
-    // 让出事件循环，别把 API 请求饿死
+    } catch { /* a single failing group does not affect the others */ }
+    // Yield to the event loop; do not starve API requests
     await new Promise((r) => setTimeout(r, 20));
   }
-  log(`[cluster] 预热完成，建了 ${built}/${combos.length} 个分组索引`);
+  log(`[cluster] warm-up done, built ${built}/${combos.length} group indexes`);
 }
 
-/** 一次请求内复用的分组聚类入口：同一请求里同一个分组只算一次。 */
+/** Per-request group clustering entry point: each group is computed only once per request. */
 function createClusterScope(): (kind: string | null | undefined, category: string | null | undefined) => ClusterIndex {
   const now = Date.now();
   const local = new Map<string, ClusterIndex>();
@@ -407,9 +407,9 @@ function createClusterScope(): (kind: string | null | undefined, category: strin
   };
 }
 /**
- * scope 用于公开站：个人状态（关闭/收藏/已读）存在 user_item_states 里，
- * 必须用自包含 EXISTS 子查询过滤 —— merge=1 时的窗口函数子查询只查 items 单表，
- * 拿不到外层 JOIN 别名，写成 JOIN 会在 merge 模式下直接报错。
+ * scope is used by the public site: personal state (hidden/starred/read) lives in user_item_states,
+ * so it must be filtered through a self-contained EXISTS subquery — with merge=1 the window-function subquery only reads items,
+ * cannot see the outer JOIN alias, and a JOIN errors out in merge mode.
  */
 type QueryScope = { userId: number | null; publicMode: boolean };
 
@@ -426,7 +426,7 @@ function buildItemsQuery(
   const status = q.status ?? "active";
   if (scope.publicMode) {
     where.push("status = 'active'");
-    // 公开站：ignored 等价于「我关掉了这条」，active 等价于「我没关」
+    // Public site: ignored is equivalent to "I turned this item off", active to "I did not"
     if (scope.userId !== null) {
       if (status === "ignored") {
         where.push(
@@ -439,9 +439,9 @@ function buildItemsQuery(
         );
         params.push(scope.userId);
       }
-      // status=all：不做个人过滤
+      // status=all: no personal filtering
     }
-    // 未登录访客：隐藏/收藏状态在浏览器 localStorage 里，服务端不参与过滤
+    // Anonymous visitor: hidden/starred state lives in browser localStorage, so the server does not filter
   } else if (status !== "all") {
     where.push("status = ?");
     params.push(status);
@@ -460,16 +460,16 @@ function buildItemsQuery(
       params.push(...cats);
     }
   }
-  // 公开演示站对未登录访客隐藏版权敏感分类（默认 pan/course）。
-  // 这两个分类聚合的是第三方网盘分享链接，公开展示等于向公众提供侵权作品指引。
-  // 只在公开站生效：自部署（SITE_MODE=selfhost）没有游客概念，全部分类可见。
-  // 这样「一键切换」只需改 SITE_MODE，不用再单独设 GUEST_HIDDEN_CATEGORIES。
+  // The public demo hides copyright-sensitive categories from anonymous visitors (pan/course by default).
+  // Those two categories aggregate third-party cloud-drive share links, so displaying them publicly is effectively pointing the public at infringing works.
+  // This only applies on the public site: a self-hosted deployment (SITE_MODE=selfhost) has no guest concept, so every category is visible.
+  // One switch (SITE_MODE) is therefore enough; GUEST_HIDDEN_CATEGORIES need not be set separately.
   if (scope.publicMode && scope.userId === null && config.guestHiddenCategories.length) {
     const hidden = config.guestHiddenCategories;
     where.push(`COALESCE(category, 'other') NOT IN (${hidden.map(() => "?").join(",")})`);
     params.push(...hidden);
   }
-  // 反向排除分类：真福利频道要把「网盘资源 / 网课教程」这类长期资料型内容挡在外面
+  // Excluded categories: a real freebie channel must keep out permanently available material such as "cloud-drive resources" and "online courses"
   if (q.excludeCategory) {
     const cats = q.excludeCategory.split(",").map((s) => s.trim()).filter(Boolean);
     if (cats.length) {
@@ -517,9 +517,9 @@ function buildItemsQuery(
   }
   if (q.hasCodes === "1") where.push("codes != '[]' AND codes != ''");
   if (q.aiOnly === "1") where.push("ai_keep = 1");
-  // 用 IS NOT 而不是 (IS NULL OR != 0)：OR 会让索引失效，5671 行要 27 秒
+  // Use IS NOT rather than (IS NULL OR != 0): the OR kills the index and 5671 rows take 27 seconds
   if (q.hideRejected === "1") where.push("ai_keep IS NOT 0");
-  // 综合评分下限：走 idx_items_status_score，和 sort=score 同一个索引方向
+  // Overall score floor: uses idx_items_status_score, the same index direction as sort=score
   if (q.minScore) {
     const n = Math.min(Math.max(Number(q.minScore), 0), 100);
     if (Number.isFinite(n) && n > 0) {
@@ -535,9 +535,9 @@ function buildItemsQuery(
     where.push("COALESCE(published_at, first_seen_at) >= ?");
     params.push(q.since);
   }
-  // 「未过期」拆成两个独立条件，避免 (A OR B) 这种写法让索引整体失效：
-  //  1) 保鲜期：源没给截止时间时按发布时间算，否则 28 天前的老帖会被当成现役福利
-  //  2) 截止时间：源给了就按它判断
+  // "Not expired" is split into two independent conditions so an (A OR B) form does not kill the whole index:
+  // 1) freshness: when the source gives no deadline, fall back to publish time, or a 28-day-old post counts as an active freebie
+  // 2) deadline: when the source gives one, judge by it
   if (q.unexpired === "1") {
     const maxAgeDays = Math.min(Math.max(Number(q.maxAgeDays ?? 14), 1), 365);
     const now = new Date();
@@ -546,7 +546,7 @@ function buildItemsQuery(
     where.push("(expires_at IS NULL OR expires_at > ?)");
     params.push(now.toISOString());
   }
-  // 获取方式：用 IN 精确匹配（走 idx_items_obtain），不要用 COALESCE 包住列
+  // Acquisition method: exact match with IN (uses idx_items_obtain); never wrap the column in COALESCE
   if (q.obtain) {
     const modes = q.obtain.split(",").filter(Boolean);
     if (modes.length) {
@@ -555,7 +555,7 @@ function buildItemsQuery(
     }
   }
 
-  // 价格筛选：完全白嫖 / 最高能付多少（未知价格视为不匹配）
+  // Price filter: fully free / the most you can pay (unknown price counts as no match)
   if (q.freeOnly === "1") where.push("(is_free = 1 OR price = 0)");
   if (q.maxPrice) {
     const cap = Number(q.maxPrice);
@@ -583,7 +583,7 @@ function buildItemsQuery(
     params.push(new Date().toISOString(), soon);
   }
 
-  // 屏蔽词下推：keyword 规则走 SQL NOT LIKE，regex 规则精确排除 id
+  // Push blocklist rules down: keyword rules become SQL NOT LIKE, regex rules exclude ids exactly
   if (!includeBlocked && rules.length) {
     const regexRules: BlockRule[] = [];
     for (const r of rules) {
@@ -601,8 +601,8 @@ function buildItemsQuery(
       }
     }
     if (regexRules.length) {
-      // 正则规则没法下推成 SQL，只能拉全表逐条跑 JS 正则。5000+ 行每次请求都扫一遍要 5-6 秒，
-      // 所以按「规则签名 + 数据版本」缓存结果，规则或条目数变了才重算。
+      // Regex rules cannot be pushed into SQL, so the whole table is scanned row by row in JS. 5000+ rows on every request costs 5-6s,
+      // so results are cached by "rule signature + data version" and only recomputed when the rules or the row count change.
       const signature = regexRules.map((r) => r.id + ":" + r.pattern + ":" + r.scope).join("|");
       const version = get<{ n: number; maxId: number }>(
         "SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS maxId FROM items WHERE status = 'active'",
@@ -629,12 +629,12 @@ function buildItemsQuery(
 
   return { where, params, subKeywords };
 }
-/** 正则屏蔽规则的扫描结果缓存（见 buildItemsQuery 里的说明）。 */
+/** Cache of scan results for regex blocklist rules (see the note in buildItemsQuery). */
 let regexBlockCache: { key: string; ids: number[] } = { key: "", ids: [] };
 /**
- * 公开读接口白名单：浏览、搜索、导出、健康检查都不需要密码。
- * 其余（推送/推送规则/AI/清理/屏蔽词/订阅/运维/采集）一律需要 ADMIN_TOKEN。
- * 注意：公开站下「个人」写操作走 /api/me/*，不落在这里。
+ * Public read-endpoint allowlist: browsing, search, export and health checks need no password.
+ * Everything else (push / push rules / AI / cleanup / blocklist / subscriptions / ops / ingest) requires ADMIN_TOKEN.
+ * Note: on the public site, personal write operations go through /api/me/* and do not land here.
  */
 const PUBLIC_GET_EXACT = new Set([
   "/api/auth/check",
@@ -658,12 +658,12 @@ let warnedAdminLocked = false;
 export function registerApi(app: Hono) {
   registerSecurity(app);
   /**
-   * 鉴权分层（顺序即优先级）：
-   *   1. 采集回传：独立 INGEST_TOKEN，自己校验
-   *   2. 登录/站点元信息：公开
-   *   3. /api/me/*：必须登录，且站点没暂停个人功能
-   *   4. 公开只读 GET
-   *   5. 其余：仅 ADMIN_TOKEN（OAuth 登录不构成管理权限）
+   * Auth tiers (order = priority):
+   *   1. collector callback: its own INGEST_TOKEN, validated separately
+   *   2. login / site metadata: public
+   *   3. /api/me/*: requires login, and personal features must not be suspended on the site
+   *   4. public read-only GETs
+   *   5. everything else: ADMIN_TOKEN only (an OAuth login does not confer admin rights)
    */
   app.use("/api/*", async (c, next) => {
     const identity = resolveIdentity(c);
@@ -675,8 +675,8 @@ export function registerApi(app: Hono) {
     if (path.startsWith("/api/auth/") || path === "/api/site/bootstrap") return next();
 
     if (path.startsWith("/api/me/")) {
-      if (!identity.user) return c.json({ error: "需要登录", needLogin: true }, 401);
-      if (identity.personalSuspended) return c.json({ error: "站点已暂停个人功能" }, 403);
+      if (!identity.user) return c.json({ error: "Login required", needLogin: true }, 401);
+      if (identity.personalSuspended) return c.json({ error: "Personal features are paused on this site" }, 403);
       return next();
     }
 
@@ -684,24 +684,24 @@ export function registerApi(app: Hono) {
       return next();
     }
 
-    if (!adminHostAllowed(c)) return c.json({ error: "请从专用管理入口访问", needAuth: true }, 403);
+    if (!adminHostAllowed(c)) return c.json({ error: "Use the dedicated admin entry point", needAuth: true }, 403);
     if (identity.isAdmin) return next();
 
     if (identity.adminLocked) {
       if (!warnedAdminLocked) {
-        console.warn("[auth] 公开站未设置 ADMIN_TOKEN，管理接口已锁定");
+        console.warn("[auth] ADMIN_TOKEN is not set on the public site; admin endpoints are locked");
         warnedAdminLocked = true;
       }
-      return c.json({ error: "站点未配置 ADMIN_TOKEN，管理区已锁定", needAuth: true, adminLocked: true }, 403);
+      return c.json({ error: "ADMIN_TOKEN is not configured; the admin area is locked", needAuth: true, adminLocked: true }, 403);
     }
     if (!config.adminToken) {
       if (!warnedNoAdminToken) {
-        console.warn("[auth] 未设置 ADMIN_TOKEN，管理接口对所有访问者开放");
+        console.warn("[auth] ADMIN_TOKEN is not set; admin endpoints are open to every visitor");
         warnedNoAdminToken = true;
       }
       return next();
     }
-    return c.json({ error: "需要管理密码", needAuth: true }, 401);
+    return c.json({ error: "Admin password required", needAuth: true }, 401);
   });
 
   registerPublicCache(app);
@@ -721,7 +721,7 @@ export function registerApi(app: Hono) {
       ? loadUserBlockRules(id.user.id, getUserPushConfig(id.user.id).useGlobalBlocks)
       : loadActiveBlockRules();
     const scope: QueryScope = { userId: id.user?.id ?? null, publicMode: id.siteMode === "public" };
-    // 公开站未登录访客：个人收藏/已关闭在 localStorage，前端带 ids 列表来查
+    // Public site, anonymous visitor: starred/hidden state is in localStorage, so the front end sends an id list to look it up
     if (scope.publicMode && !scope.userId && q.ids) {
       const ids = q.ids.split(",").map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0).slice(0, 100);
       if (!ids.length) return c.json({ total: 0, limit, offset, items: [] });
@@ -733,19 +733,19 @@ export function registerApi(app: Hono) {
     }
 
     const { where, params, subKeywords } = buildItemsQuery(q, rules, includeBlocked, scope);
-    // 同一福利常被十几个源同时报道（Epic 喜加一尤甚），列表默认按 title_key 收敛：
-    // 每组只保留最早入库的那条，前端按 dup_count 显示「N 个来源」并可展开。
-    // 指定了单源或「我的收藏」时不做跨源合并，避免主记录落在别处导致本源条目被隐藏。
+    // The same freebie is often reported by a dozen sources at once (Epic giveaways especially), so the list collapses by title_key by default:
+    // each group keeps its earliest-ingested row, and the front end shows "N sources" from dup_count and can expand them.
+    // When a single source or "my starred" is selected, no cross-source merge is done, so the primary row cannot hide this source's item.
     const merge = q.merge === "1" || (q.merge !== "0" && !q.source && q.starred !== "1");
     if (merge) {
-      // 代表条目只算一次：旧写法是逐行相关子查询（每行都要重跑一遍全表过滤 + 排序），5000 行时单次请求要 2-13 秒。
-      // 现在改成一次窗口函数：按 title_key + 48 小时时间桶分组，每组取 score 最高的一条当代表。
+      // The representative row is computed only once: the old form was a per-row correlated subquery (rerunning the full table filter and sort for every row), 2-13s per request at 5000 rows.
+      // It is now a single window function grouped by title_key + a 48-hour bucket, keeping the highest-scoring row of each group as the representative.
       const groupKey = "CASE WHEN category = 'game' THEN 'game' ELSE CAST(julianday(COALESCE(published_at, first_seen_at)) / 2 AS INTEGER) END";
 const keyOk = "LENGTH(CAST(title_key AS BLOB)) >= 6";
       const innerClause = where.length ? `${where.join(" AND ")} AND ` : "";
-      // 注意：SQL 层只按 title_key 收敛（可走 idx_items_title_key 索引）。
-      // canonical_id 的跨措辞聚类交给下面的 JS TitleDeduper（它已接收 canonicalId），
-      // 不要放进 PARTITION BY —— 表达式分组会让索引失效，全表排序会阻塞事件循环。
+      // Note: the SQL layer only collapses by title_key (so idx_items_title_key applies).
+      // Cross-wording clustering via canonical_id is left to the JS TitleDeduper below (it already receives canonicalId),
+      // so do not put it in PARTITION BY — an expression group kills the index and a full-table sort blocks the event loop.
       where.push(
         `(title_key IS NULL OR title_key = '' OR LENGTH(CAST(title_key AS BLOB)) < 6 OR id IN (
            SELECT rid FROM (
@@ -753,7 +753,7 @@ const keyOk = "LENGTH(CAST(title_key AS BLOB)) >= 6";
                FROM items WHERE ${innerClause}${keyOk}
            ) WHERE rn = 1))`,
       );
-      // 子查询复用上面同一批过滤条件，参数按 SQL 文本顺序再排一遍
+      // The subquery reuses the same filter conditions above, so bind the parameters again in SQL text order
       params.push(...params.slice());
     }
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
@@ -788,7 +788,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
       fetchLimit,
     );
 
-    // 折叠列表与计算「N 个来源」共用同一个分组聚类：徽标数字一定等于展开条数 + 1
+    // The collapsed list and the "N sources" count share one group cluster: the badge number always equals the expanded rows + 1
     const clusterOf = createClusterScope();
 
     const seenClusters = new Set<string>();
@@ -823,7 +823,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     });
   });
 
-  /** 展开「同一福利/事件的其它来源报道」（精确 title_key + 同事件实体聚类双路召回） */
+  /** Expand "other sources reporting the same freebie/event" (exact title_key plus same-event entity clustering, two recall paths) */
   app.get("/api/items/:id/related", (c) => {
     const id = Number(c.req.param("id"));
     if (!Number.isFinite(id)) return c.json({ error: "bad id" }, 400);
@@ -835,8 +835,8 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     );
     if (!self) return c.json({ items: [] });
 
-// 与列表的「N 个来源」用同一个池子：同 (kind, category) 分组的 active 条目。
-    // 这样徽标数字一定等于展开条数 + 1；列表里那个数字就是这么算出来的。
+// Same pool as the list's "N sources": active items in the same (kind, category) group.
+    // That way the badge number always equals the expanded rows + 1; the number in the list is computed the same way.
     const pool = loadClusterPool(self.kind, self.category, clusterSince());
     const index = buildClusterIndex(pool);
     const selfRoot = index.rootOf(id);
@@ -872,10 +872,10 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     if (format === "json") {
       return c.json({ count: rows.length, items: applyUserStates(rows.map((r) => shape(r, subKeywords)), viewer.user?.id ?? null) });
     }
-    const lines = [`# 资源雷达导出 (${new Date().toISOString().slice(0, 10)}) · ${rows.length} 条`, ""];
+    const lines = [`# Resource Radar export (${new Date().toISOString().slice(0, 10)}) · ${rows.length} items`, ""];
     for (const r of rows) {
       const s = shape(r, subKeywords);
-      const tags = [s.source_id, s.category, s.is_free === 1 ? "白嫖" : s.price ? `≤${Math.round(s.price)}元` : null]
+      const tags = [s.source_id, s.category, s.is_free === 1 ? "free" : s.price ? `≤¥${Math.round(s.price)}` : null]
         .filter(Boolean)
         .join(" · ");
       lines.push(`- [${r.title}](${r.url}) — *${tags}*` + (s.codes.length ? ` \`${s.codes.join(" / ")}\`` : ""));
@@ -900,15 +900,15 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
   });
   app.patch("/api/admin/items/:id/classification", async (c) => {
     const id = Number(c.req.param("id"));
-    if (!Number.isSafeInteger(id) || id < 1) return c.json({ error: "条目 ID 无效" }, 400);
-    if (!get("SELECT id FROM items WHERE id=?", id)) return c.json({ error: "资源不存在" }, 404);
+    if (!Number.isSafeInteger(id) || id < 1) return c.json({ error: "Invalid item ID" }, 400);
+    if (!get("SELECT id FROM items WHERE id=?", id)) return c.json({ error: "Resource not found" }, 404);
     const body = await c.req.json().catch(() => null) as { category?: unknown; kind?: unknown; note?: unknown; clear?: unknown } | null;
-    if (!body) return c.json({ error: "请求体无效" }, 400);
+    if (!body) return c.json({ error: "Invalid request body" }, 400);
     if (body.clear !== true) {
-      if (body.category !== null && !isCategory(body.category)) return c.json({ error: "分类必须是合法分类或 null（保持自动）" }, 400);
-      if (body.kind !== null && !isContentKind(body.kind)) return c.json({ error: "内容形态必须是合法频道形态或 null（保持自动）" }, 400);
-      if (body.category === null && body.kind === null) return c.json({ error: "至少选择分类或内容形态；取消人工设置请恢复自动" }, 400);
-      if (body.note !== undefined && (typeof body.note !== "string" || body.note.length > 200)) return c.json({ error: "备注最多 200 字" }, 400);
+      if (body.category !== null && !isCategory(body.category)) return c.json({ error: "Category must be a valid category or null (keep automatic)" }, 400);
+      if (body.kind !== null && !isContentKind(body.kind)) return c.json({ error: "Content kind must be a valid channel kind or null (keep automatic)" }, 400);
+      if (body.category === null && body.kind === null) return c.json({ error: "Pick a category or a content kind; to clear a manual override, restore automatic" }, 400);
+      if (body.note !== undefined && (typeof body.note !== "string" || body.note.length > 200)) return c.json({ error: "Note must be 200 characters or fewer" }, 400);
     }
     tx(() => {
       run("DELETE FROM item_classification_overrides WHERE item_id=?", id);
@@ -949,7 +949,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
 
   app.post("/api/items/batch", async (c) => {
     const body = (await c.req.json().catch(() => null)) as { ids?: number[]; action?: string } | null;
-    if (!body?.ids?.length || !body.action) return c.json({ error: "ids 与 action 必填" }, 400);
+    if (!body?.ids?.length || !body.action) return c.json({ error: "ids and action are required" }, 400);
     const ids = body.ids.filter((n) => Number.isInteger(n)).slice(0, 200);
     if (!ids.length) return c.json({ updated: 0 });
     const ph = ids.map(() => "?").join(",");
@@ -973,7 +973,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     return c.json({ ok: true, updated: ids.length });
   });
 
-  // ---- 分类口径（前端/第三方客户端据此渲染，与主页频道保持同一份定义）----
+  // Category reference (the front end and third-party clients render from this; same definition as the home-page channels)
   app.get("/api/taxonomy", (c) => {
     return c.json({
       categories: CATEGORY_KEYS.map((key) => ({ key, label: CATEGORY_LABEL[key], desc: CATEGORY_DESC[key] })),
@@ -983,7 +983,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
       obtains: OBTAIN_KEYS.map((key) => ({ key, label: OBTAIN_LABEL[key] })),
     });
   });
-  // ---- 屏蔽词管理 ----
+  // Blocklist management
   app.get("/api/block-rules", (c) => {
     const rules = all<BlockRule>("SELECT id, pattern, mode, scope, enabled, created_at FROM block_rules ORDER BY id DESC");
     const activeItems = all<{ id: number; source_id: string; title: string; summary: string | null }>(
@@ -998,7 +998,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
       return { ...r, enabled: r.enabled === 1, hits };
     });
 
-    // 统计全部启用规则合计挡掉多少条
+    // Count how many items all enabled rules block in total
     const enabledRules = rules.filter((r) => r.enabled === 1);
     let totalBlocked = 0;
     if (enabledRules.length) {
@@ -1035,9 +1035,9 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     }
 
     const pattern = (body?.pattern ?? "").trim();
-    if (!pattern || pattern.length > 80) return c.json({ error: "pattern 必填且不超过 80 字" }, 400);
+    if (!pattern || pattern.length > 80) return c.json({ error: "pattern is required and must be 80 characters or fewer" }, 400);
     const mode = body?.mode === "regex" ? "regex" : "keyword";
-    if (mode === "regex" && !safeRegex(pattern)) return c.json({ error: "正则无效或复杂度过高；不支持回溯引用、前后查找和重复分组" }, 400);
+    if (mode === "regex" && !safeRegex(pattern)) return c.json({ error: "Invalid or too-complex regex; backreferences, lookarounds and repeated groups are not supported" }, 400);
     const scope = (body?.scope ?? "all").trim() || "all";
     run(
       "INSERT INTO block_rules (pattern, mode, scope, enabled, created_at) VALUES (?, ?, ?, 1, ?) ON CONFLICT(pattern, scope) DO UPDATE SET mode = excluded.mode, enabled = 1",
@@ -1062,7 +1062,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     return c.json({ ok: true });
   });
 
-  // ---- 数据源管理与手动触发 ----
+  // Source management and manual triggers
   app.get("/api/sources", (c) => {
     const sourceRows = all<Record<string, unknown>>("SELECT * FROM sources ORDER BY id");
     const stats = all<{ source_id: string; n: number; last_published: string | null }>(
@@ -1095,7 +1095,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     } | null;
     const name = (body?.name ?? "").trim();
     const url = (body?.url ?? "").trim();
-    if (!name || !/^https?:\/\//i.test(url)) return c.json({ error: "名称与合法的 http(s) RSS 地址必填" }, 400);
+    if (!name || !/^https?:\/\//i.test(url)) return c.json({ error: "Name and a valid http(s) RSS URL are required" }, 400);
     const hintErr = checkSourceHints(body?.kindHint, body?.categoryHint, body?.fixedCategory);
     if (hintErr) return c.json({ error: hintErr }, 400);
     const id = addCustomRssSource({
@@ -1141,13 +1141,13 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     }
     if (typeof body.name === "string") {
       const nextName = body.name.trim();
-      if (!nextName || nextName.length > 80) return c.json({ error: "名称长度需在 1-80 字之间" }, 400);
+      if (!nextName || nextName.length > 80) return c.json({ error: "Name must be between 1 and 80 characters" }, 400);
       sets.push("name = ?");
       params.push(nextName);
     }
     if (body.config !== undefined) {
       if (!body.config || typeof body.config !== "object" || Array.isArray(body.config)) {
-        return c.json({ error: "config 必须为 JSON 对象" }, 400);
+        return c.json({ error: "config must be a JSON object" }, 400);
       }
       const cfg = body.config as Record<string, unknown>;
       const hintErr = checkSourceHints(cfg.kindHint, cfg.categoryHint, cfg.fixedCategory);
@@ -1155,24 +1155,24 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
       if (existing.kind === "rss") {
         const feeds = (body.config as { feeds?: unknown }).feeds;
         if (!Array.isArray(feeds) || feeds.length === 0) {
-          return c.json({ error: "RSS 源 config.feeds 必须至少包含一条订阅地址" }, 400);
+          return c.json({ error: "An RSS source's config.feeds must contain at least one feed URL" }, 400);
         }
-        if (feeds.length > 30) return c.json({ error: "每个源最多 30 条 RSS 地址" }, 400);
+        if (feeds.length > 30) return c.json({ error: "A source can have at most 30 RSS URLs" }, 400);
         for (const f of feeds) {
-          if (!f || typeof f !== "object" || Array.isArray(f)) return c.json({ error: "每条 RSS 配置必须是对象" }, 400);
+          if (!f || typeof f !== "object" || Array.isArray(f)) return c.json({ error: "Each RSS entry must be an object" }, 400);
           const url = typeof (f as { url?: unknown })?.url === "string" ? (f as { url: string }).url.trim() : "";
           if (!/^https?:\/\//i.test(url)) {
-            return c.json({ error: "RSS 订阅地址必须是合法的 http(s):// URL" }, 400);
+            return c.json({ error: "The RSS feed URL must be a valid http(s):// URL" }, 400);
           }
           const feedHintErr = checkSourceHints(
             (f as { kindHint?: unknown })?.kindHint,
             (f as { categoryHint?: unknown })?.categoryHint,
           );
-          if (feedHintErr) return c.json({ error: `feeds 里的 ${feedHintErr}` }, 400);
+          if (feedHintErr) return c.json({ error: `feeds: ${feedHintErr}` }, 400);
           for (const key of ["titleKeywords", "excludeTitleKeywords", "includeCategories", "excludeCategories"] as const) {
             const values = (f as Record<string, unknown>)[key];
             if (values !== undefined && (!Array.isArray(values) || values.length > 50 || values.some((value) => typeof value !== "string" || !value.trim() || value.length > 80))) {
-              return c.json({ error: `${key} 必须是最多 50 个非空字符串的数组，每个不超过 80 字` }, 400);
+              return c.json({ error: `${key} must be an array of at most 50 non-empty strings, each 80 characters or fewer` }, 400);
             }
           }
         }
@@ -1208,7 +1208,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     }
   });
 
-  // ---- VPS Cookie 托管与执行器状态（受 ADMIN_TOKEN 保护，不返回明文 Cookie）----
+  // VPS cookie hosting and runner status (ADMIN_TOKEN protected; never returns raw cookies)
   app.get("/api/cookies", (c) => {
     return c.json(toPublicCookieStatus());
   });
@@ -1230,7 +1230,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
   app.post("/api/cookies/test-runner", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { runnerUrl?: string };
     const url = (body.runnerUrl ?? getCookieSettings().runnerUrl).replace(/\/+$/, "");
-    if (!url) return c.json({ ok: false, error: "未配置执行器地址" }, 400);
+    if (!url) return c.json({ ok: false, error: "Runner URL is not configured" }, 400);
     try {
       const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(4000) });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; busy?: boolean; chrome?: boolean };
@@ -1245,7 +1245,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     return c.json({ runs: all("SELECT * FROM runs ORDER BY id DESC LIMIT ?", limit) });
   });
 
-  // ---- 订阅 ----
+  // Subscriptions
   app.get("/api/subscriptions", (c) => {
     const rows = all<{ id: number; keyword: string; created_at: string; last_hit_at: string | null }>(
       "SELECT id, keyword, created_at, last_hit_at FROM subscriptions ORDER BY keyword",
@@ -1257,7 +1257,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
   app.post("/api/subscriptions", async (c) => {
     const body = (await c.req.json().catch(() => null)) as { keyword?: string } | null;
     const keyword = (body?.keyword ?? "").trim();
-    if (!keyword || keyword.length > 40) return c.json({ error: "keyword 必填且不超过 40 字" }, 400);
+    if (!keyword || keyword.length > 40) return c.json({ error: "keyword is required and must be 40 characters or fewer" }, 400);
     run(
       "INSERT INTO subscriptions (keyword, created_at) VALUES (?, ?) ON CONFLICT(keyword) DO NOTHING",
       keyword,
@@ -1379,7 +1379,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     });
   });
 
-  // ---- 推送设置 / 预览 / 记录 ----
+  // Push settings / preview / log
   app.get("/api/push", (c) => {
     const s = getPushSettings();
     return c.json({
@@ -1394,13 +1394,13 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
 
   app.patch("/api/push", async (c) => {
     const body = (await c.req.json().catch(() => null)) as Partial<PushSettings> | null;
-    if (!body) return c.json({ error: "无效的请求体" }, 400);
+    if (!body) return c.json({ error: "Invalid request body" }, 400);
     const settings = savePushSettings(body);
     return c.json({ settings, stats: pushStats(), quiet: isQuietNow(settings) });
   });
 
   /* ---------------------------------------------------------------- *
-   * AI 语义审核配置：开关/规则初筛/送审范围/连接与性能/提示词/测试/补审
+   * AI semantic review settings: switch / rule pre-screening / review scope / connection and performance / prompt / test / re-review
    * ---------------------------------------------------------------- */
 
   app.get("/api/ai", (c) => {
@@ -1422,7 +1422,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
   });
   app.patch("/api/ai", async (c) => {
     const body = (await c.req.json().catch(() => null)) as (Partial<AiSettings> & { reviewBeforePush?: boolean }) | null;
-    if (!body) return c.json({ error: "无效的请求体" }, 400);
+    if (!body) return c.json({ error: "Invalid request body" }, 400);
     if (typeof body.reviewBeforePush === "boolean") {
       savePushSettings({ pushTiming: body.reviewBeforePush ? "wait_ai" : "instant_first" });
     }
@@ -1460,24 +1460,24 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
   }));
   app.patch("/api/admin/classification", async (c) => {
     const body = await c.req.json().catch(() => null) as { guardEnabled?: unknown } | null;
-    if (typeof body?.guardEnabled !== "boolean") return c.json({ error: "guardEnabled 必须是布尔值" }, 400);
+    if (typeof body?.guardEnabled !== "boolean") return c.json({ error: "guardEnabled must be a boolean" }, 400);
     return c.json({ settings: saveClassificationSettings(body.guardEnabled) });
   });
   app.post("/api/admin/classification/preview", async (c) => {
     const body = await c.req.json().catch(() => null) as { title?: unknown; summary?: unknown; sourceId?: unknown; aiKind?: unknown } | null;
-    if (typeof body?.title !== "string" || !body.title.trim() || body.title.length > 200) return c.json({ error: "标题必填，最多 200 字" }, 400);
+    if (typeof body?.title !== "string" || !body.title.trim() || body.title.length > 200) return c.json({ error: "Title is required and must be 200 characters or fewer" }, 400);
     const sourceId = typeof body.sourceId === "string" ? body.sourceId : "";
     const summary = typeof body.summary === "string" ? body.summary.slice(0, 2000) : "";
     const hints = getSourceHints(sourceId);
     const item = enrichItem({ externalId: "preview", title: body.title, summary, url: "https://example.com/classification-preview" }, sourceId, hints);
-    if (!item) return c.json({ error: "无法识别标题" }, 400);
+    if (!item) return c.json({ error: "Could not classify the title" }, 400);
     const kind = resolveKind(body.aiKind, true, { title: item.title, summary, sourceId, category: item.category, obtain: guessObtain(item.title, summary), isFree: item.isFree, price: item.price, ...hints });
-    return c.json({ category: item.category, ruleKind: item.kind, finalKind: kind, signals: contentSignals(item.title, summary), hints, note: "规则试算，不调用 AI；AI kind 仅用于模拟误判后的校验结果" });
+    return c.json({ category: item.category, ruleKind: item.kind, finalKind: kind, signals: contentSignals(item.title, summary), hints, note: "Rule dry run; AI is not called. aiKind only supplies the validation result after a simulated misclassification" });
   });
   app.post("/api/admin/classification/reclassify", async (c) => {
     const body = await c.req.json().catch(() => ({})) as { sourceId?: unknown };
     const sourceId = typeof body.sourceId === "string" && body.sourceId ? body.sourceId : undefined;
-    if (sourceId && !get("SELECT id FROM sources WHERE id = ?", sourceId)) return c.json({ error: "数据源不存在" }, 400);
+    if (sourceId && !get("SELECT id FROM sources WHERE id = ?", sourceId)) return c.json({ error: "Source not found" }, 400);
     return c.json(tx(() => reclassifyStoredItems("all", { sourceId })));
   });
 
@@ -1487,7 +1487,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     return c.json(await runAiDedupBackfill(limit));
   });
   /* ---------------------------------------------------------------- *
-   * 数据保留：过期条目、推送日志、日报的自动清理
+   * Data retention: automatic cleanup of expired items, push logs and digests
    * ---------------------------------------------------------------- */
 
   app.get("/api/retention", (c) => {
@@ -1496,12 +1496,12 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
 
   app.patch("/api/retention", async (c) => {
     const body = (await c.req.json().catch(() => null)) as Partial<RetentionSettings> | null;
-    if (!body) return c.json({ error: "无效的请求体" }, 400);
+    if (!body) return c.json({ error: "Invalid request body" }, 400);
     return c.json({ settings: saveRetention(body), counts: itemCounts() });
   });
 
   app.post("/api/retention/preview", (c) => {
-    // 只统计不删，让用户先看清会清掉多少
+    // Count only, do not delete, so the user can first see how much would be removed
     return c.json(runCleanup(getRetention(), true));
   });
 
@@ -1526,44 +1526,44 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
 
   app.post("/api/push/test", async (c) => {
     if (!pushEnabled || config.pushChannel !== "telegram" || !config.telegramBotToken || !config.telegramChatId) {
-      return c.json({ error: "Telegram 推送未启用或缺少凭据" }, 400);
+      return c.json({ error: "Telegram push is not enabled or credentials are missing" }, 400);
     }
-    await sendTelegram("🛰 资源雷达测试消息 · " + new Date().toLocaleString("zh-CN"));
+    await sendTelegram("🛰 Resource Radar test message · " + new Date().toLocaleString("en-US"));
     return c.json({ ok: true });
   });
 
   app.post("/api/ingest", async (c) => {
-    if (!config.ingestToken) return c.json({ error: "INGEST_TOKEN 未配置，拒绝写入" }, 403);
+    if (!config.ingestToken) return c.json({ error: "INGEST_TOKEN is not configured; refusing to write" }, 403);
     const auth = c.req.header("authorization") ?? "";
     if (auth !== "Bearer " + config.ingestToken) return c.json({ error: "unauthorized" }, 401);
     const body = (await c.req.json().catch(() => null)) as { sourceId?: string; items?: unknown[] } | null;
-    if (!body?.sourceId || !Array.isArray(body.items)) return c.json({ error: "sourceId 与 items 必填" }, 400);
-    if (body.items.length > 500) return c.json({ error: "每次最多回传 500 条" }, 400);
+    if (!body?.sourceId || !Array.isArray(body.items)) return c.json({ error: "sourceId and items are required" }, 400);
+    if (body.items.length > 500) return c.json({ error: "At most 500 items per callback" }, 400);
     const items = body.items
       .filter((i): i is RawItem => {
         const r = i as RawItem | null;
         return Boolean(r && typeof r.title === "string" && typeof r.url === "string");
       })
-      // 外部脚本（油猴 / 本地 Playwright）不一定给 externalId，缺了就退回 URL，
-      // 否则会带着 undefined 绑到 SQLite 参数上直接 500
+      // External scripts (userscripts / local Playwright) do not always send an externalId, so fall back to the URL,
+      // otherwise undefined is bound as a SQLite parameter and the request 500s straight away
       .map((r) => ({ ...r, externalId: r.externalId || r.url }));
     const saved = ingestItems(body.sourceId, items);
     return c.json({ ok: true, received: body.items.length, ...saved });
   });
 
   app.post("/api/ingest/failed", async (c) => {
-    if (!config.ingestToken) return c.json({ error: "INGEST_TOKEN 未配置" }, 403);
+    if (!config.ingestToken) return c.json({ error: "INGEST_TOKEN is not configured" }, 403);
     const auth = c.req.header("authorization") ?? "";
     if (auth !== "Bearer " + config.ingestToken) return c.json({ error: "unauthorized" }, 401);
     const body = (await c.req.json().catch(() => null)) as { sourceId?: string; reason?: string; status?: string } | null;
-    if (!body?.sourceId || !body.reason) return c.json({ error: "sourceId 与 reason 必填" }, 400);
+    if (!body?.sourceId || !body.reason) return c.json({ error: "sourceId and reason are required" }, 400);
     const status = body.status === "failed" ? "failed" : "degraded";
     return c.json(markSourceFailure(body.sourceId, body.reason, status));
   });
 
-  /** 供本地/远端 Playwright 采集器同步「我的订阅」关键词，主动去知乎/小红书/小黑盒定向搜索 */
+  /** Lets local/remote Playwright collectors sync "my subscription" keywords and search Zhihu / Xiaohongshu / Xiaoheihe on purpose */
   app.get("/api/ingest/keywords", (c) => {
-    if (!config.ingestToken) return c.json({ error: "INGEST_TOKEN 未配置" }, 403);
+    if (!config.ingestToken) return c.json({ error: "INGEST_TOKEN is not configured" }, 403);
     const auth = c.req.header("authorization") ?? "";
     if (auth !== "Bearer " + config.ingestToken) return c.json({ error: "unauthorized" }, 401);
     const rows = all<{ keyword: string }>("SELECT keyword FROM subscriptions ORDER BY id DESC LIMIT 20");
@@ -1645,15 +1645,15 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
   });
 
   /* ================================================================== *
-   * 公开站：登录用户个人接口（/api/me/*）
-   * 与自建站的全局接口严格分开：这里只读写当前用户自己的数据。
+   * Public site: per-user endpoints for logged-in users (/api/me/*)
+   * Strictly separate from the self-hosted global endpoints: these only read and write the current user's own data.
    * ================================================================== */
 
   registerAuthRoutes(app);
 
   const currentUserId = (c: any): number => {
     const id = identityOf(c);
-    if (!id.user) throw new Error("需要登录");
+    if (!id.user) throw new Error("Login required");
     return id.user.id;
   };
 
@@ -1704,7 +1704,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
   app.post("/api/me/items/batch", async (c) => {
     const userId = currentUserId(c);
     const body = (await c.req.json().catch(() => null)) as { ids?: number[]; action?: string } | null;
-    if (!body?.ids?.length || !body.action) return c.json({ error: "ids 与 action 必填" }, 400);
+    if (!body?.ids?.length || !body.action) return c.json({ error: "ids and action are required" }, 400);
     const ids = body.ids.filter((n) => Number.isInteger(n)).slice(0, 200);
     if (!ids.length) return c.json({ updated: 0 });
     for (const itemId of ids) {
@@ -1717,7 +1717,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     return c.json({ ok: true, updated: ids.length });
   });
 
-  /** 访客在 localStorage 攒的偏好，登录后一键合并到账号 */
+  /** Preferences a visitor accumulated in localStorage, merged into the account in one click after login */
   app.post("/api/me/items/import-guest", async (c) => {
     const userId = currentUserId(c);
     const body = (await c.req.json().catch(() => null)) as {
@@ -1728,12 +1728,12 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     } | null;
     if (!body) return c.json({ error: "invalid json" }, 400);
     if ([body.hidden, body.starred, body.read].some((arr) => Array.isArray(arr) && arr.length > 500)) {
-      return c.json({ error: "单次最多合并每类 500 条偏好；本机数据未清除" }, 400);
+      return c.json({ error: "At most 500 preferences per kind can be merged at once; local data was not cleared" }, 400);
     }
     const patterns = Array.isArray(body.blocked) ? [...new Set(body.blocked.filter((s): s is string => typeof s === "string").map((s) => s.trim()).filter(Boolean))] : [];
-    if (patterns.length > 100 || patterns.some((s) => s.length > 80)) return c.json({ error: "屏蔽词最多 100 条，每条不超过 80 字" }, 400);
+    if (patterns.length > 100 || patterns.some((s) => s.length > 80)) return c.json({ error: "At most 100 blocklist entries, each 80 characters or fewer" }, 400);
     const ownPatterns = new Set(all<{ pattern: string }>("SELECT pattern FROM user_block_rules WHERE user_id = ?", userId).map((r) => r.pattern));
-    if (ownPatterns.size + patterns.filter((s) => !ownPatterns.has(s)).length > 100) return c.json({ error: "合并后屏蔽规则超过 100 条，请先整理规则" }, 400);
+    if (ownPatterns.size + patterns.filter((s) => !ownPatterns.has(s)).length > 100) return c.json({ error: "The merge would exceed 100 blocklist rules; clean up the rules first" }, 400);
     const clean = (arr: unknown): number[] =>
       Array.isArray(arr) ? arr.filter((n): n is number => Number.isInteger(n) && n > 0).slice(0, 500) : [];
     let imported = 0;
@@ -1769,7 +1769,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     });
   });
 
-  /* ---- 个人屏蔽词 ---- */
+  /* ---- Personal blocklist ---- */
   app.get("/api/me/block-rules", (c) => {
     const userId = currentUserId(c);
     const rules = all<BlockRule>(
@@ -1812,7 +1812,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     if (body?.presets) {
       const count = get<{ n: number }>("SELECT COUNT(*) AS n FROM user_block_rules WHERE user_id = ?", userId)?.n ?? 0;
       const additional = PRESET_NOISE_PATTERNS.filter((pr) => !get("SELECT id FROM user_block_rules WHERE user_id = ? AND pattern = ? AND scope = ?", userId, pr.pattern, pr.scope)).length;
-      if (count + additional > 100) return c.json({ error: "导入后超过 100 条规则，请先删除不用的规则" }, 400);
+      if (count + additional > 100) return c.json({ error: "The import would exceed 100 rules; delete unused rules first" }, 400);
       for (const pr of PRESET_NOISE_PATTERNS) {
         run(
           "INSERT INTO user_block_rules (user_id, pattern, mode, scope, enabled, created_at) VALUES (?, ?, ?, ?, 1, ?) ON CONFLICT(user_id, pattern, scope) DO UPDATE SET enabled = 1",
@@ -1822,12 +1822,12 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
       return c.json({ ok: true, added: PRESET_NOISE_PATTERNS.length });
     }
     const pattern = (body?.pattern ?? "").trim();
-    if (!pattern || pattern.length > 80) return c.json({ error: "pattern 必填且不超过 80 字" }, 400);
-    if (body?.mode === "regex") return c.json({ error: "个人屏蔽仅支持关键词，不支持正则表达式" }, 400);
+    if (!pattern || pattern.length > 80) return c.json({ error: "pattern is required and must be 80 characters or fewer" }, 400);
+    if (body?.mode === "regex") return c.json({ error: "Personal blocking supports keywords only, not regular expressions" }, 400);
     const mode = "keyword";
     const existing = get("SELECT id FROM user_block_rules WHERE user_id = ? AND pattern = ? AND scope = ?", userId, pattern, body?.scope ?? "all");
     if (!existing && (get<{ n: number }>("SELECT COUNT(*) AS n FROM user_block_rules WHERE user_id = ?", userId)?.n ?? 0) >= 100) {
-      return c.json({ error: "个人屏蔽规则最多 100 条，请先删除不用的规则" }, 400);
+      return c.json({ error: "At most 100 personal blocklist rules; delete unused rules first" }, 400);
     }
     const scope = (body?.scope ?? "all").trim() || "all";
     run(
@@ -1842,7 +1842,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     const body = (await c.req.json().catch(() => ({}))) as { enabled?: boolean };
     if (typeof body.enabled !== "boolean") return c.json({ error: "enabled required" }, 400);
     if (body.enabled && get<{ mode: string }>("SELECT mode FROM user_block_rules WHERE id = ? AND user_id = ?", Number(c.req.param("id")), userId)?.mode === "regex") {
-      return c.json({ error: "个人正则规则已停用，请改成关键词" }, 400);
+      return c.json({ error: "Personal regex rules are disabled; use keywords instead" }, 400);
     }
     run("UPDATE user_block_rules SET enabled = ? WHERE id = ? AND user_id = ?", body.enabled ? 1 : 0, Number(c.req.param("id")), userId);
     return c.json({ ok: true });
@@ -1854,7 +1854,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     return c.json({ ok: true });
   });
 
-  /* ---- 个人关注词 ---- */
+  /* ---- Personal watchwords ---- */
   app.get("/api/me/subscriptions", (c) => {
     const userId = currentUserId(c);
     const rows = all<{ id: number; keyword: string; created_at: string; last_hit_at: string | null }>(
@@ -1869,10 +1869,10 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     const userId = currentUserId(c);
     const body = (await c.req.json().catch(() => null)) as { keyword?: string } | null;
     const keyword = (body?.keyword ?? "").trim();
-    if (!keyword || keyword.length > 40) return c.json({ error: "keyword 必填且不超过 40 字" }, 400);
+    if (!keyword || keyword.length > 40) return c.json({ error: "keyword is required and must be 40 characters or fewer" }, 400);
     if ((get<{ n: number }>("SELECT COUNT(*) AS n FROM user_subscriptions WHERE user_id = ?", userId)?.n ?? 0) >= 100 &&
         !get("SELECT id FROM user_subscriptions WHERE user_id = ? AND keyword = ?", userId, keyword)) {
-      return c.json({ error: "个人关注词最多 100 个" }, 400);
+      return c.json({ error: "At most 100 personal watchwords" }, 400);
     }
     run(
       "INSERT INTO user_subscriptions (user_id, keyword, created_at) VALUES (?, ?, ?) ON CONFLICT(user_id, keyword) DO NOTHING",
@@ -1895,7 +1895,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     return c.json({ subscriptions: rows });
   });
 
-  /* ---- 个人 Telegram Bot 推送 ---- */
+  /* ---- Personal Telegram bot push ---- */
   app.get("/api/me/push", (c) => {
     const userId = currentUserId(c);
     const cfg = getUserPushConfig(userId);
@@ -1914,7 +1914,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
   app.patch("/api/me/push", async (c) => {
     const userId = currentUserId(c);
     const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!body) return c.json({ error: "无效的请求体" }, 400);
+    if (!body) return c.json({ error: "Invalid request body" }, 400);
     try {
       const cfg = saveUserPushConfig(userId, body as never);
       return c.json({ config: cfg, settings: cfg.settings, stats: userPushStats(userId), quiet: isQuietNow(cfg.settings) });
@@ -1931,9 +1931,9 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     let token = (body.botToken ?? "").trim();
     if (!token) {
       token = resolveUserBotToken(userId) ?? "";
-      if (!token) return c.json({ error: "请先填写 Bot Token" }, 400);
+      if (!token) return c.json({ error: "Fill in the bot token first" }, 400);
     }
-    if (!/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token)) return c.json({ error: "Bot Token 格式不正确" }, 400);
+    if (!/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token)) return c.json({ error: "Bot token format is not valid" }, 400);
     try {
       const chats = await detectTelegramChatIds(token);
       return c.json({ ok: true, chats });
@@ -1949,9 +1949,9 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     const cfg = getUserPushConfig(userId);
     const viaWebhook = cfg.settings.deliverVia === "webhook";
     if (viaWebhook ? !cfg.settings.webhookUrl : !cfg.hasToken || !cfg.chatId)
-      return c.json({ error: viaWebhook ? "请先保存 webhook 地址" : "请先保存 Bot Token 与 Chat ID" }, 400);
+      return c.json({ error: viaWebhook ? "Save a webhook URL first" : "Save the bot token and chat ID first" }, 400);
     try {
-      await sendTelegramToUser(userId, "🛰 资源雷达 · 个人推送测试消息\n" + new Date().toLocaleString("zh-CN"));
+      await sendTelegramToUser(userId, "🛰 Resource Radar · personal push test message\n" + new Date().toLocaleString("en-US"));
       return c.json({ ok: true });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
@@ -1978,8 +1978,8 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
   });
 
   /* ================================================================== *
-   * 站长管理：访问控制 / 邀请码 / 用户 / 公告 / 版本更新
-   * 全部要求 isAdmin（ADMIN_TOKEN），OAuth 登录不构成管理权限
+   * Site-owner admin: access control / invite codes / users / announcements / version updates
+   * All of these require isAdmin (ADMIN_TOKEN); an OAuth login does not confer admin rights
    * ================================================================== */
 
   app.get("/api/admin/overview", async (c) => {
@@ -1999,7 +1999,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
 
   app.patch("/api/admin/access", async (c) => {
     const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!body) return c.json({ error: "无效的请求体" }, 400);
+    if (!body) return c.json({ error: "Invalid request body" }, 400);
     return c.json({ access: saveAccessControl(body as never) });
   });
 
@@ -2048,7 +2048,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
 
   app.patch("/api/admin/onboarding", async (c) => {
     const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!body) return c.json({ error: "无效的请求体" }, 400);
+    if (!body) return c.json({ error: "Invalid request body" }, 400);
     return c.json({ onboarding: saveOnboarding(body as never) });
   });
 
@@ -2071,10 +2071,10 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
   });
 
   /* ================================================================== *
-   * 项目自身 RSS 2.0 输出
-   *   /rss.xml            公开 Feed（可带筛选参数）
-   *   /api/rss            同上，给不方便走根路径的客户端
-   *   /rss/u/:token.xml   个人专属 Feed（自动套用个人隐藏与个人屏蔽词）
+   * The project's own RSS 2.0 output
+   *   /rss.xml            public feed (accepts filter parameters)
+   *   /api/rss            same as above, for clients that cannot use the root path
+   *   /rss/u/:token.xml   personal feed (applies personal hidden items and personal blocklist automatically)
    * ================================================================== */
 
   function rssQuery(
@@ -2148,8 +2148,8 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     return sendFeed(
       c,
       items,
-      "资源雷达 · 福利订阅",
-      "全网福利、黑五好价、拼车交易、开源项目与新闻资讯的聚合订阅",
+      "Resource Radar · Freebie subscriptions",
+      "An aggregated subscription to community freebies, Black Friday deals, carpool trades, open-source projects and tech news",
       "/rss.xml" + (qs ? "?" + qs : ""),
       "public",
     );
@@ -2161,7 +2161,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     const file = c.req.param("file");
     const token = file.replace(/\.xml$/i, "");
     const user = userByRssToken(token);
-    if (!user) return c.text("RSS 链接无效或已被重置", 404);
+    if (!user) return c.text("This RSS link is invalid or has been reset", 404);
     const q = c.req.query();
     const mode = q.mode === "push" || q.mode === "subs" ? q.mode : "feed";
     const limit = Math.min(Math.max(Number(q.limit ?? 50), 1), 100);
@@ -2200,8 +2200,8 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     return sendFeed(
       c,
       items.slice(0, limit),
-      "资源雷达 · " + (user.name ?? user.username) + " 的订阅",
-      mode === "push" ? "按我的推送规则输出" : mode === "subs" ? "只包含我关注的关键词" : "我的个人订阅（已排除我关掉的条目）",
+      "Resource Radar · " + (user.name ?? user.username) + "'s subscriptions",
+      mode === "push" ? "Filtered by my push rules" : mode === "subs" ? "Only items matching my watchwords" : "My personal subscription (items I turned off are excluded)",
       "/rss/u/" + token + ".xml" + (mode !== "feed" ? "?mode=" + mode : ""),
       "user-" + user.id + "-" + mode,
     );

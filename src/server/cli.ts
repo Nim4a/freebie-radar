@@ -62,7 +62,7 @@ async function main() {
       break;
     }
     case "reclassify": {
-      // 规则调整后重算历史条目的分类 / 标签 / 评分 / title_key（保留 ignored 状态与 AI 结论）
+      // After rule changes, recompute category / tags / score / title_key for historical items (keeping ignored status and AI verdicts)
       const rows = all<{
         id: number; source_id: string; external_id: string; url: string; title: string;
         summary: string | null; author: string | null; published_at: string | null;
@@ -115,7 +115,7 @@ async function main() {
           kindHint: hints.kindHint,
           guardEnabled: hints.guardEnabled,
         });
-        // 资讯/水帖不许落进实物福利（AI 或旧规则标错的在这里降级）
+        // News/shitposts must not land in physical freebies (downgraded here when AI or old rules got it wrong)
         finalCategory = demoteOfflineCategory(
           finalCategory,
           finalKind,
@@ -147,7 +147,7 @@ summary: e.summary ?? "",
       const limit = Number(args[0] ?? 200);
       const modeArg = args[1] === "recent" || args[1] === "rejected" ? args[1] : "pending";
       const out = await backfillAi(limit, modeArg);
-      console.log(`[ai-review:${out.mode}] 扫描 ${out.scanned}，有结论 ${out.reviewed}，判非福利 ${out.rejected}`);
+      console.log(`[ai-review:${out.mode}] scanned ${out.scanned}, reviewed ${out.reviewed}, rejected ${out.rejected}`);
       break;
     }
     case "stats": {
@@ -156,9 +156,9 @@ summary: e.summary ?? "",
       break;
     }
     case "diagnose": {
-      // 推送体检：确认全套筛选下没有非白嫖条目漏进来，并给出各维度分布
+      // Push health check: confirm no non-freebie items leak through the full filter set, and report the per-dimension distribution
       const s = getPushSettings();
-      console.log("筛选条件", JSON.stringify({ maxPrice: s.maxPrice, obtainModes: s.obtainModes, onlyAiKeep: s.onlyAiKeep, langMode: s.langMode, categories: s.categories }));
+      console.log("filters", JSON.stringify({ maxPrice: s.maxPrice, obtainModes: s.obtainModes, onlyAiKeep: s.onlyAiKeep, langMode: s.langMode, categories: s.categories }));
       const rows = all<{
         title: string;
         score: number;
@@ -183,13 +183,13 @@ summary: e.summary ?? "",
         );
         if (ok) pass[r.obtain ?? "?"] = (pass[r.obtain ?? "?"] ?? 0) + 1;
       }
-      console.log("候选池", rows.length, "通过筛选", JSON.stringify(pass));
+      console.log("candidates", rows.length, "passed filters", JSON.stringify(pass));
       const leak = Object.keys(pass).filter((k) => k !== "free" && k !== "conditional");
-      console.log(leak.length ? "⚠️  非白嫖泄漏: " + leak.join(",") : "✅ 没有抽奖/试用/推广/需付费条目漏进推送");
+      console.log(leak.length ? "⚠️  non-freebie leak: " + leak.join(",") : "✅ no lottery/trial/promo/paid items leaked into push");
       break;
     }
     case "obtain": {
-      // 重新判定全库获取方式（AI 提示词更新后跑一次）
+      // Re-derive the obtain mode for the whole DB (run once after AI prompt updates)
       const rows = all<{ id: number; title: string; summary: string | null; ai: string | null }>(
         "SELECT id, title, summary, ai FROM items WHERE obtain IS NULL OR ? = 1",
         args.includes("--all") ? 1 : 0,
@@ -208,7 +208,7 @@ summary: e.summary ?? "",
         dist[mode] = (dist[mode] ?? 0) + 1;
         run("UPDATE items SET obtain = ? WHERE id = ?", mode, r.id);
       }
-      console.log(`[obtain] ${rows.length} 条`, JSON.stringify(dist));
+      console.log(`[obtain] ${rows.length} items`, JSON.stringify(dist));
       break;
     }
     default:

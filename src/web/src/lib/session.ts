@@ -55,8 +55,8 @@ export function useBootstrap(): { data: Bootstrap | null; loading: boolean; relo
 }
 
 /* ------------------------------------------------------------------ *
- * 访客本地状态：公开站未登录时，「不想看 / 收藏 / 已读 / 快屏蔽」
- * 只存在这台浏览器里，绝不发请求，所以谁也不会影响别人。
+ * Guest local state: on the public site while logged out, hidden / starred / read /
+ * quick-block state lives only in this browser and never sends a request, so nobody affects anyone else.
  * ------------------------------------------------------------------ */
 
 const GUEST_KEY = "radar_guest_state_v1";
@@ -91,7 +91,7 @@ export function writeGuest(state: GuestState): void {
   try {
     localStorage.setItem(GUEST_KEY, JSON.stringify(state));
   } catch {
-    /* 隐私模式 / 配额满：静默降级，本轮仍可用内存状态 */
+    /* Private mode / quota full: degrade silently; this round still uses in-memory state */
   }
 }
 
@@ -110,7 +110,7 @@ function toggle(list: number[], id: number, on: boolean): number[] {
   return [...set];
 }
 
-/** 访客版 PATCH：与 /api/me/items/:id 同语义，只是落到 localStorage */
+/** Guest PATCH: same semantics as /api/me/items/:id, but persisted to localStorage */
 export function guestPatch(id: number, body: { starred?: boolean; read?: boolean; status?: string }): GuestState {
   const s = readGuest();
   if (typeof body.starred === "boolean") s.starred = toggle(s.starred, id, body.starred);
@@ -148,7 +148,7 @@ export function guestRemoveBlock(pattern: string): GuestState {
   return s;
 }
 
-/** 访客本地屏蔽词是否命中（关键词，大小写不敏感） */
+/** Whether a local guest block word matches (keyword, case-insensitive) */
 export function guestBlocks(title: string, summary: string | null, patterns: string[]): boolean {
   if (!patterns.length) return false;
   const hay = (title + " " + (summary ?? "")).toLowerCase();
@@ -159,7 +159,7 @@ export function guestCounts(s: GuestState): { hidden: number; starred: number; r
   return { hidden: s.hidden.length, starred: s.starred.length, read: s.read.length, blocked: s.blocked.length };
 }
 
-/** 登录成功后把本地偏好合并进账号（用户手动点「合并」才调用） */
+/** Merge local preferences into the account after login (only when the user clicks "Merge") */
 export async function importGuestToAccount(s: GuestState): Promise<{ ok: boolean; imported: number; error?: string }> {
   const res = await fetch("/api/me/items/import-guest", {
     method: "POST",
@@ -168,7 +168,7 @@ export async function importGuestToAccount(s: GuestState): Promise<{ ok: boolean
   });
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { error?: string };
-    return { ok: false, imported: 0, error: err.error ?? "合并失败" };
+    return { ok: false, imported: 0, error: err.error ?? "Merge failed" };
   }
   const data = (await res.json()) as { imported: number };
   clearGuest();

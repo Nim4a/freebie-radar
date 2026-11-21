@@ -49,7 +49,7 @@ function recentDigestPushed(day: string): { ids: Set<number>; seeds: DedupeEntry
     try {
       for (const id of JSON.parse(r.item_ids) as number[]) ids.add(id);
     } catch {
-      /* 忽略损坏的历史记录 */
+      /* ignore corrupt history rows */
     }
   }
   if (!ids.size) return { ids, seeds: [] };
@@ -119,17 +119,17 @@ function daysLeft(iso: string | null): string | null {
   if (!iso) return null;
   const d = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
   if (Number.isNaN(d)) return null;
-  if (d < 0) return "已过期";
-  if (d === 0) return "今天截止";
-  return d + " 天后截止";
+  if (d < 0) return "expired";
+  if (d === 0) return "ends today";
+  return "ends in " + d + " days";
 }
 
 export function formatDigest(items: DigestItem[], date = new Date()): string {
-  const label = date.getMonth() + 1 + "月" + date.getDate() + "日";
-  if (!items.length) return "🛰 资源雷达 · " + label + "\n\n今天没有新的可领资源，明天见。";
-  const lines = ["🛰 资源雷达 · " + label + " 精选 " + items.length + " 条", ""];
+  const label = `${date.getMonth() + 1}/${date.getDate()}`;
+  if (!items.length) return "🛰 Resource Radar · " + label + "\n\nNo new claimable resources today, see you tomorrow.";
+  const lines = ["🛰 Resource Radar · " + label + " — " + items.length + " picks", ""];
   items.forEach((it, i) => {
-    const cat = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "其它";
+    const cat = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "Other";
     const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? KIND_LABEL[it.kind as ContentKind] : null;
     const exp = daysLeft(it.expires_at);
     const meta = [sourceLabel(it.source_id), kindTag, cat, exp].filter(Boolean).join(" · ");
@@ -138,7 +138,7 @@ export function formatDigest(items: DigestItem[], date = new Date()): string {
     lines.push("   " + it.url);
     lines.push("");
   });
-  lines.push("来源：资源雷达多源聚合");
+  lines.push("Source: Resource Radar multi-source aggregation");
   return lines.join("\n");
 }
 
@@ -166,12 +166,12 @@ export async function runDaily(options: { dryRun?: boolean; date?: Date; log?: (
       JSON.stringify({ text, count: items.length }),
       new Date().toISOString(),
     );
-    log("[daily] " + key + " 已生成 " + items.length + " 条（PUSH_CHANNEL=none，仅落库）");
+    log("[daily] " + key + " generated " + items.length + " items (PUSH_CHANNEL=none, stored only)");
     return { date: key, count: items.length, text, pushed: false, skippedReason: "push disabled" };
   }
 
   if (!config.telegramBotToken || !config.telegramChatId) {
-    throw new Error("PUSH_CHANNEL=telegram 但缺少 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID");
+    throw new Error("PUSH_CHANNEL=telegram but TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID is missing");
   }
 
   await sendTelegram(text);
@@ -183,7 +183,7 @@ export async function runDaily(options: { dryRun?: boolean; date?: Date; log?: (
     new Date().toISOString(),
     new Date().toISOString(),
   );
-  log("[daily] " + key + " 已推送 " + items.length + " 条到 Telegram");
+  log("[daily] " + key + " pushed " + items.length + " items to Telegram");
   return { date: key, count: items.length, text, pushed: true };
 }
 
@@ -208,7 +208,7 @@ export function digestExists(day: string): boolean {
 }
 
 /* ------------------------------------------------------------------ *
- * 周报：近 7 天「值得抢」的精选 + 热词 + 分类分布
+ * Weekly: the past 7 days' "worth grabbing" picks + hot words + category distribution
  * ------------------------------------------------------------------ */
 
 const WEEK_DAYS = 7;
@@ -217,7 +217,7 @@ function shortDate(iso: string): string {
   return iso.slice(5, 10).replace("-", "/");
 }
 
-/** 周报的存储键：`2026-11-03~11-09`，既能按字符串排序，也不会和日报的日期主键撞车 */
+/** Weekly storage key: `2026-11-03~11-09` — sorts as a string and never collides with the daily digest's date primary key */
 export function weekKey(date = new Date()): string {
   const end = new Date(date);
   const start = new Date(end.getTime() - (WEEK_DAYS - 1) * 86_400_000);
@@ -272,7 +272,7 @@ export function pickWeekly(date = new Date(), topN = 20): DigestItem[] {
     }
     return true;
   });
-  // 同一福利被十几个源报道时只留一条，避免周报被喜加一刷屏
+  // When a dozen sources report the same freebie, keep only one so the weekly is not flooded by free-game posts
   return dedupeByTitle(usable, []).slice(0, topN);
 }
 
@@ -280,13 +280,13 @@ export function formatWeekly(items: DigestItem[], date = new Date()): string {
   const end = new Date(date);
   const start = new Date(end.getTime() - (WEEK_DAYS - 1) * 86_400_000);
   const range = shortDate(dayKey(start)) + " ~ " + shortDate(dayKey(end));
-  const head = "🛰 资源雷达 · 本周精选（" + range + "）";
-  if (!items.length) return head + "\n\n这一周没有新的可领资源，下周见。";
+  const head = "🛰 Resource Radar · Weekly picks (" + range + ")";
+  if (!items.length) return head + "\n\nNo new claimable resources this week, see you next week.";
 
   const hot = buildHotReport(WEEK_DAYS * 24).words.slice(0, 6).map((w) => w.w);
   const byCategory = new Map<string, number>();
   for (const it of items) {
-    const key = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "其它";
+    const key = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "Other";
     byCategory.set(key, (byCategory.get(key) ?? 0) + 1);
   }
   const catLine = [...byCategory.entries()]
@@ -295,13 +295,13 @@ export function formatWeekly(items: DigestItem[], date = new Date()): string {
     .map(([k, n]) => k + " " + n)
     .join(" · ");
 
-  const lines = [head, "共 " + items.length + " 条 · 只收 AI 判为真福利且未过期的", ""];
-  if (hot.length) lines.push("🔥 本周热词：" + hot.join(" · "));
-  if (catLine) lines.push("📊 分类分布：" + catLine);
+  const lines = [head, items.length + " items · only AI-confirmed freebies that have not expired", ""];
+  if (hot.length) lines.push("🔥 Hot words this week: " + hot.join(" · "));
+  if (catLine) lines.push("📊 Category distribution: " + catLine);
   lines.push("");
 
   items.forEach((it, i) => {
-    const cat = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "其它";
+    const cat = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "Other";
     const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? KIND_LABEL[it.kind as ContentKind] : null;
     const exp = daysLeft(it.expires_at);
     const meta = [sourceLabel(it.source_id), kindTag, cat, exp].filter(Boolean).join(" · ");
@@ -310,7 +310,7 @@ export function formatWeekly(items: DigestItem[], date = new Date()): string {
     lines.push("   " + it.url);
     lines.push("");
   });
-  lines.push("来源：资源雷达多源聚合");
+  lines.push("Source: Resource Radar multi-source aggregation");
   return lines.join("\n");
 }
 
@@ -343,12 +343,12 @@ export async function runWeekly(options: { dryRun?: boolean; date?: Date; log?: 
 
   if (config.pushChannel !== "telegram" || !config.telegramBotToken || !config.telegramChatId) {
     save(null);
-    log("[weekly] " + key + " 已生成 " + items.length + " 条（推送未启用，仅落库）");
+    log("[weekly] " + key + " generated " + items.length + " items (push not enabled, stored only)");
     return { date: key, count: items.length, text, pushed: false, skippedReason: "push disabled" };
   }
 
   await sendTelegram(text);
   save(new Date().toISOString());
-  log("[weekly] " + key + " 已推送 " + items.length + " 条到 Telegram");
+  log("[weekly] " + key + " pushed " + items.length + " items to Telegram");
   return { date: key, count: items.length, text, pushed: true };
 }

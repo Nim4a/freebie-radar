@@ -45,7 +45,7 @@ function updateAi(
   );
 }
 
-/** AI 判定统计：总体分布 + 分类分布 + 队列状态 + 执行遥测 + 最近样本。 */
+/** AI verdict stats: overall distribution + category distribution + queue status + execution telemetry + recent samples. */
 export function aiStats() {
   const totals = get<{ kept: number; rejected: number }>(
     `SELECT
@@ -53,7 +53,7 @@ export function aiStats() {
        SUM(CASE WHEN ai_keep = 0 THEN 1 ELSE 0 END) AS rejected
      FROM items WHERE status = 'active'`,
   );
-  // 未送审计数要把全局屏蔽词跳过省额度的条目剥离出来，避免界面显示「N 条待审」但点补审却 0 条可执行
+  // The pending count must exclude entries skipped by the global blocklist to save quota, so the UI does not show "N pending" while backfill finds 0 actionable
   const pendingRows = all<{ source_id: string; title: string; summary: string | null }>(
     "SELECT source_id, title, summary FROM items WHERE status = 'active' AND ai IS NULL",
   );
@@ -125,17 +125,17 @@ export function aiStats() {
 export type BackfillMode = "pending" | "recent" | "rejected";
 
 /**
- * 手动补审 / 重审：
- * - pending：仅审还没有 AI 结论的条目（默认）
- * - recent：用最新提示词/偏好重审近期入库条目（校准分类、获取方式与质量分）
- * - rejected：复核近期被 AI 拦截的非福利条目（防止误杀）
+ * Manual backfill / re-review:
+ * - pending: only review items with no AI verdict yet (default)
+ * - recent: re-review recently ingested items with the latest prompt/preferences (recalibrate category, obtain mode and quality score)
+ * - rejected: recheck non-freebie items recently blocked by AI (guard against false rejects)
  */
 export async function backfillAi(
   limit = 200,
   mode: BackfillMode = "pending",
 ): Promise<{ reviewed: number; rejected: number; skippedBlocked: number; scanned: number; mode: BackfillMode; error?: string }> {
   const s = getAiSettings();
-  if (!aiReady(s)) return { reviewed: 0, rejected: 0, skippedBlocked: 0, scanned: 0, mode, error: "AI 未启用或未配置" };
+  if (!aiReady(s)) return { reviewed: 0, rejected: 0, skippedBlocked: 0, scanned: 0, mode, error: "AI is not enabled or not configured" };
 
   const safeLimit = Math.min(Math.max(Math.round(limit), 1), 2000);
   const scanLimit = Math.min(safeLimit * 4, 4000);
@@ -174,10 +174,10 @@ export async function backfillAi(
   const activeRows = unblocked.slice(0, safeLimit);
   if (!activeRows.length) return { reviewed: 0, rejected: 0, skippedBlocked, scanned: rows.length, mode };
 
-  const modeLabel = mode === "rejected" ? "复核已拦截" : mode === "recent" ? "重审近期" : "未审补审";
+  const modeLabel = mode === "rejected" ? "recheck blocked" : mode === "recent" ? "re-review recent" : "backfill unreviewed";
   const jobId = startAiJob({
     stage: "backfill",
-    label: `历史库补审（${modeLabel}）`,
+    label: `History backfill (${modeLabel})`,
     model: s.model,
     total: activeRows.length,
     totalBatches: Math.ceil(activeRows.length / s.batchSize),
@@ -247,7 +247,7 @@ if (!v.keep) rejected += 1;
         else keptIds.push(row.id);
         const obtain = v.obtain ?? guessObtain(row.title, row.summary ?? "");
         const hints = getSourceHints(row.source_id);
-        // 重审时重算一次基础分再校准，避免多次叠加乘除失真
+        // On re-review, recompute the base score before calibrating so repeated multiplier/divisor passes do not drift
         const baseEnriched = enrichItem(
           {
             externalId: row.external_id,
@@ -278,7 +278,7 @@ if (!v.keep) rejected += 1;
           kindHint: hints.kindHint,
           guardEnabled: hints.guardEnabled,
         });
-        // 白嫖证据校验：抽奖 → lottery，明确标价 → deal
+        // Freebie evidence check: lottery → lottery, explicit price → deal
         const evidenced = enforceFreebieEvidence(kind, obtain, row.title, category, {
           summary: row.summary,
           codes: baseEnriched?.codes,
@@ -287,7 +287,7 @@ if (!v.keep) rejected += 1;
         kind = evidenced.kind;
         const finalObtain = evidenced.obtain === undefined ? obtain : evidenced.obtain;
         const categoryHint = evidenced.category ?? category;
-        // 资讯/水帖不许落进实物福利
+        // News/shitposts must not land in physical freebies
         let finalCategory = demoteEditorialGoods(
           demoteOfflineCategory(
             categoryHint,
@@ -326,12 +326,12 @@ if (!v.keep) rejected += 1;
     throw err;
   }
 
-// 补审/重审通过后顺带走一次 AI 语义去重聚类，避免历史库继续留着同活动多条
+// After a backfill/re-review pass, also run AI semantic dedup clustering so the history does not keep duplicate rows for one campaign
   if (keptIds.length && getAiSettings().aiDedupEnabled) {
     try {
       await dedupeKeptItemsWithAi(keptIds);
     } catch (err) {
-      console.log("[ai] 补审后语义去重失败:", err instanceof Error ? err.message : String(err));
+      console.log("[ai] semantic dedup after backfill failed:", err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -339,8 +339,8 @@ if (!v.keep) rejected += 1;
 }
 
 /**
- * 零 Token 存量分类重整：用最新关键词规则重算 active 条目的 category（以及未 AI 审核条目的 kind / obtain）。
- * scope = "other"：仅挽救落入 other/null 的条目；scope = "all"：全量 active 按新规则刷新（已 AI 审核的只刷新 category=other 的漏网条目）。
+ * Zero-token bulk reclassification: recompute category for active items with the latest keyword rules (and kind / obtain for items without an AI verdict).
+ * scope = "other": only rescue items that fell into other/null; scope = "all": refresh all active items by the new rules (for AI-reviewed ones, only refresh the stragglers with category=other).
  */
 export function reclassifyStoredItems(scope: "other" | "all" = "other", options: { dryRun?: boolean; sourceId?: string; itemId?: number; forceAutomatic?: boolean } = {}): {
   scanned: number;
@@ -399,7 +399,7 @@ export function reclassifyStoredItems(scope: "other" | "all" = "other", options:
       hints,
     );
     if (!e) continue;
-    // AI 审核给出的分类优先：规则以前只用它算 kind，落库却存了关键词结果，导致 AI 判对的分类被丢掉
+    // Prefer the category from AI review: the rules used to use it only for kind but stored the keyword result, discarding AI's correct category
     let aiCategory: string | null = null;
     let aiKind: string | null = null;
     if (r.ai) {
@@ -411,7 +411,7 @@ export function reclassifyStoredItems(scope: "other" | "all" = "other", options:
         aiCategory = null;
       }
     }
-    // 已人工/AI 审核过的非 other 条目不随意覆盖其分类，只修复 other / 误判成 news 的 VPS 帖子 / 非权威源的 news
+    // Non-other items already manually/AI reviewed keep their category; only fix other / VPS posts mislabeled as news / news from non-authoritative sources
     const catWasLegacyNews = (r.category === "news" || r.category === "headline") && e.category === "vps";
     let nextCat: string | null =
       aiCategory ??
@@ -434,8 +434,8 @@ export function reclassifyStoredItems(scope: "other" | "all" = "other", options:
     }
     const fallbackObtain = guessObtain(r.title, r.summary ?? "");
     const autoObtain = r.ai_keep === null ? fallbackObtain : (r.obtain ?? fallbackObtain);
-    // 白嫖证据校验：抽奖 → lottery，明确标价 → deal，资讯分类/无领取证据的价格文 → info。
-    // 修复按钮必须走这道闸，否则真福利里已有的消费测评文点修复也修不掉。
+    // Freebie evidence check: lottery → lottery, explicit price → deal, news category / price posts with no claim evidence → info.
+    // The fix button must go through this gate, otherwise review posts already among real freebies cannot be fixed.
     const evidenced = enforceFreebieEvidence(nextKind as ContentKind, autoObtain, r.title, nextCat, {
       summary: r.summary,
       codes: e.codes,
@@ -444,11 +444,11 @@ export function reclassifyStoredItems(scope: "other" | "all" = "other", options:
     nextKind = evidenced.kind;
     const nextObtain = evidenced.obtain === undefined ? autoObtain : evidenced.obtain;
     nextCat = evidenced.category ?? nextCat;
-    // 资讯/水帖不许落进实物福利
+    // News/shitposts must not land in physical freebies
     nextCat = demoteOfflineCategory(nextCat, nextKind, r.title, r.summary ?? "", e.category) as typeof nextCat;
     ({ category: nextCat, kind: nextKind } = applyManualClassification(r.id, nextCat, nextKind as import("../shared/taxonomy.ts").ContentKind));
 
-// 顺手用新的多维加权口径重算分数（规则内容分存进 base_score，AI 质量分参与合成）
+// Also recompute scores with the new multi-factor weighting (rule-based content score goes into base_score, AI quality score is part of the blend)
     const keepBool = r.ai_keep === null ? null : r.ai_keep === 1;
     const quality =
       typeof r.ai_quality === "number" && Number.isFinite(r.ai_quality)
@@ -480,7 +480,7 @@ export function reclassifyStoredItems(scope: "other" | "all" = "other", options:
           const parsed: unknown = JSON.parse(ai);
           if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ai = JSON.stringify({
             ...parsed, kind: nextKind, category: nextCat,
-            classificationCorrection: { previousKind: r.kind, previousCategory: r.category, reason: "来源固定分类或内容证据校验", at: new Date().toISOString() },
+            classificationCorrection: { previousKind: r.kind, previousCategory: r.category, reason: "fixed source category or content evidence check", at: new Date().toISOString() },
           });
         } catch { /* preserve malformed legacy AI */ }
       }

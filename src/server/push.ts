@@ -13,7 +13,7 @@ import type { FreshItem } from "./collectors/index.ts";
 import { CATEGORY_SET, KIND_ORDER, OBTAIN_SET } from "../shared/taxonomy.ts";
 
 /* ------------------------------------------------------------------ *
- * 推送设置（存在 settings 表，网页可改，无需重启）
+ * Push settings (stored in the settings table, editable from the web UI, no restart needed)
  * ------------------------------------------------------------------ */
 
 export type PushTiming = "wait_ai" | "instant_first";
@@ -25,101 +25,101 @@ export type PushRoute = {
   id: string;
   name: string;
   enabled: boolean;
-  /** 允许的内容形态：freebie / deal / opensource / info；空数组表示不限（自动排除 noise） */
+  /** Allowed content kinds: freebie / deal / opensource / info; an empty array means unrestricted (noise is excluded automatically) */
   kinds: string[];
-  /** 允许的分类；空数组表示不限 */
+  /** Allowed categories; an empty array means unrestricted */
   categories: string[];
-  /** 允许的获取方式；空数组表示不限 */
+  /** Allowed acquisition methods; an empty array means unrestricted */
   obtainModes: string[];
-  /** 主题关键词（任一命中即可）；空数组表示不限 */
+  /** Topic keywords (any single hit is enough); an empty array means unrestricted */
   keywords: string[];
-  /** 最高价格上限：null 不限 / 0 仅免费 */
+  /** Maximum price: null = unlimited / 0 = free only */
   maxPrice: number | null;
-  /** 最低评分要求（0-100） */
+  /** Minimum score requirement (0-100) */
   minScore: number;
-  /** true = 满足高分/急迫条件可即时推送；false = 仅进攒批汇总 */
+  /** true = push instantly once the high-score/urgent conditions hold; false = only collect into a batch */
   instant: boolean;
-  /** 可选自定义消息头前缀（覆盖全局 customHeader） */
+  /** Optional custom message header prefix (overrides the global customHeader) */
   header?: string;
 };
 export type PushSettings = {
-  /** 总开关；关掉后即时和攒批都不发，日报仍可单独触发 */
+  /** Master switch; when off, neither instant nor batch push is sent, but the daily digest can still be triggered separately */
   enabled: boolean;
-  /** 推送时机：wait_ai = 先过 AI 审核再推（防误推）；instant_first = 极速抢码先推再后台补审 */
+  /** Push timing: wait_ai = run AI review before pushing (avoids false pushes); instant_first = push code drops immediately and backfill the review in the background */
   pushTiming: PushTiming;
-  /** wait_ai 时每轮推送前最多同步等几条过 AI（5-60）；超出部分进后台队列并在审完后自动补推 */
+  /** With wait_ai, how many items may wait synchronously for AI review before each push round (5-60); the rest go to a background queue and are pushed automatically once reviewed */
   syncPrePushLimit: number;
-  /** 后台 AI 补审（超出同步上限或极速模式补审）判定为真福利后，自动补进推送管道 */
+  /** When a background AI re-review (beyond the sync cap, or instant_first backfill) judges the item a real freebie, add it back into the push pipeline automatically */
   pushAfterBackfill: boolean;
-  /** AI 未出结果/被拒绝时的处理：strict = 必须 AI 验真；rule_fallback = 未审到按强信号放行；ignore_ai = 忽略 AI 仅用规则 */
+  /** Handling when AI has no verdict or rejects: strict = AI must confirm; rule_fallback = let it through on strong signals when unreviewed; ignore_ai = ignore AI, rules only */
   aiFallbackMode: AiFallbackMode;
-  /** 兼容旧字段：等同于 aiFallbackMode !== "ignore_ai" */
+  /** Legacy field: equivalent to aiFallbackMode !== "ignore_ai" */
   onlyAiKeep: boolean;
-  /** 立即推送的评分阈值 */
+  /** Score threshold for an instant push */
   instantScore: number;
-  /** 进攒批队列的评分阈值 */
+  /** Score threshold for entering the batch queue */
   batchScore: number;
-  /** 含兑换码是否立即推 */
+  /** Whether an item containing a redemption code is pushed immediately */
   instantOnCodes: boolean;
-  /** 标题含「限量/先到先得」等词是否立即推 */
+  /** Whether titles containing words like "limited / first come, first served" are pushed immediately */
   instantOnUrgent: boolean;
-  /** 每小时最多推几条（含批次里的单条计数） */
+  /** Maximum pushes per hour (individual items inside a batch count too) */
   maxPerHour: number;
-  /** 单次立即推送最多几条 */
+  /** Maximum number of items per instant push */
   maxPerInstant: number;
-  /** 攒批间隔（分钟）；0 表示关闭攒批 */
+  /** Batch interval (minutes); 0 disables batching */
   batchIntervalMin: number;
-  /** 一批最多合并几条 */
+  /** Maximum number of items merged into one batch */
   maxPerBatch: number;
-  /** 是否开启夜间免打扰 */
+  /** Whether quiet hours are enabled */
   quietEnabled: boolean;
-  /** 静默时段 "23:30-08:00" */
+  /** Quiet window, e.g. "23:30-08:00" */
   quietHours: string;
-  /** 投递渠道：telegram 用个人 Bot，webhook 用自定义 HTTP 端点（QQ 桥 / Bark / 飞书 / Slack 都能接） */
+  /** Delivery channel: telegram uses the personal Bot, webhook uses a custom HTTP endpoint (QQ bridges / Bark / Feishu / Slack all work) */
   deliverVia: "telegram" | "webhook";
-  /** webhook 地址，POST JSON；留空则不投递 */
+  /** Webhook URL, POSTed as JSON; leave empty to skip delivery */
   webhookUrl: string;
-  /** 可选：随请求带 X-Radar-Secret 头，方便接收端校验来源 */
+  /** Optional: send an X-Radar-Secret header so the receiver can verify the origin */
   webhookSecret: string;
-  /** 静默时段行为：batch = 转入攒批早上发；drop = 静默期内不发送也不攒批 */
+  /** Quiet-hours behavior: batch = move into batching and send in the morning; drop = neither send nor batch during the quiet window */
   quietAction: QuietAction;
-  /** 静默时段按哪个时区算 */
+  /** Timezone used to evaluate quiet hours */
   timezone: string;
-  /** 新帖时效上限（小时）；0 表示不限，默认 72 小时 */
+  /** Maximum age of a post in hours; 0 means unlimited, default 72 hours */
   maxAgeHours: number;
-  /** 语言偏好：all 全部 / zh 只看中文 / en 只看英文 */
+  /** Language preference: all / zh = Chinese only / en = English only */
   langMode: "all" | "zh" | "en";
-  /** 数据源过滤模式：all 全部 / include 仅推指定源 / exclude 排除指定源 */
+  /** Source filter mode: all / include = only the listed sources / exclude = exclude the listed sources */
   sourceMode: PushSourceMode;
-  /** 配合 sourceMode 使用的数据源 ID 列表 */
+  /** List of source IDs used together with sourceMode */
   sourceIds: string[];
-  /** 推送里是否带价格 */
+  /** Whether the push shows the price */
   includePrice: boolean;
-  /** 推送里是否带截止时间 */
+  /** Whether the push shows the deadline */
   includeDeadline: boolean;
-  /** 推送里是否带综合评分 */
+  /** Whether the push shows the overall score */
   includeScore: boolean;
-  /** 推送里是否带获取方式标签（如 有条件/抽奖） */
+  /** Whether the push shows the acquisition tag (e.g. conditional / lottery) */
   includeObtain: boolean;
-  /** 推送里是否附带 AI 推荐理由 */
+  /** Whether the push includes the AI recommendation reason */
   includeAiReason: boolean;
-  /** 自定义即时/攒批消息头前缀（留空使用默认） */
+  /** Custom header prefix for instant/batch messages (empty = default) */
   customHeader: string;
-  /** 是否按标题去重（同一游戏被多个源报道只推一次） */
+  /** Whether to deduplicate by title (the same game covered by several sources is pushed only once) */
   dedupeByTitle: boolean;
-  /** 最高价格上限：null 不限 / 0 仅完全白嫖 / 正数为人民币上限 */
+  /** Maximum price: null = unlimited / 0 = completely free only / positive = cap in CNY */
   maxPrice: number | null;
-  /** 允许推送的获取方式；空数组表示不限制。默认只推 free */
+  /** Allowed acquisition methods; an empty array means unrestricted. Defaults to free only */
   obtainModes: string[];
-  /** 允许推送的内容形态（freebie / deal / opensource / info）；空数组表示不限（排除 noise） */
+  /** Allowed content kinds (freebie / deal / opensource / info); an empty array means unrestricted (noise excluded) */
   kinds: string[];
-  /** 多频道推送路由：非空且有启用路由时，按路由各自条件分流匹配 */
+  /** Multi-channel push routing: when non-empty with enabled routes, items are split by each route's own conditions */
   routes: PushRoute[];
-  /** 允许推送的分类白名单；空数组表示全部允许 */
+  /** Whitelist of pushable categories; an empty array means all are allowed */
   categories: string[];
-  /** 命中「我的订阅」关键词时优先走即时推送 */
+  /** Items matching a "My subscriptions" keyword prefer instant push */
   prioritizeSubscribed: boolean;
-  /** 将价格、分类、语言、源、AI 筛选同步应用到每日精选 */
+  /** Apply the price / category / language / source / AI filters to the daily picks too */
   applyToDigest: boolean;
 };
 
@@ -166,10 +166,10 @@ export const DEFAULT_SETTINGS: PushSettings = {
 };
 
 const SETTINGS_KEY = "push";
-/** 分类 / 获取方式 / 形态的合法值统一来自 shared/taxonomy.ts，避免与主页分类漂移 */
+/** Legal values for category / acquisition method / kind come from shared/taxonomy.ts so they cannot drift from the home-page categories */
 const VALID_CATEGORIES: ReadonlySet<string> = CATEGORY_SET;
 const VALID_OBTAIN: ReadonlySet<string> = OBTAIN_SET;
-/** 可推送形态：noise 是拦截结果，不作为推送目标 */
+/** Pushable kinds: noise is a rejection result, never a push target */
 const VALID_KINDS = new Set<string>(KIND_ORDER);
 
 function numOr(v: unknown, fallback: number, min: number, max: number): number {
@@ -308,13 +308,13 @@ export function savePushSettings(patch: Partial<PushSettings>): PushSettings {
     JSON.stringify(merged),
     new Date().toISOString(),
   );
-  // 热更新攒批定时器：避免从 0 改成 10 分钟或缩短周期后要重启或干等上一周期
+  // Hot-reload the batch timer: changing 0 to 10 minutes or shortening the interval should not require a restart or waiting out the previous cycle
   if (schedulerStarted) rescheduleFlush();
   return merged;
 }
 
 /* ------------------------------------------------------------------ *
- * 语言识别 / 标题归一化 / 过滤判定（与前端筛选同源）
+ * Language detection / title normalization / filter decisions (same rules as the front-end filters)
  * ------------------------------------------------------------------ */
 
 const CJK = /[\u4e00-\u9fff\u3400-\u4dbf]/g;
@@ -371,7 +371,7 @@ export function aiAllowed(
   if (mode === "ignore_ai") return true;
   if (item.aiKeep === false || item.kind === "noise") return false;
   if (item.aiKeep === true) return true;
-  // 还没有 AI 结论（aiKeep === null | undefined）
+  // No AI verdict yet (aiKeep === null | undefined)
   if (!shouldReview()) return true;
   if (mode === "strict") return false;
   return item.codes.length > 0 || (item.score >= 70 && hasValueSignal(item.title, item.kind));
@@ -467,7 +467,7 @@ export function checkPushFilter(
   return null;
 }
 
-/** 推送与日报共用的筛选检查：时效 / 源 / 语言 / 形态 / 分类 / 最高价格 / AI 验真 / 获取方式 / 多路由。 */
+/** Filter check shared by push and digest: age / source / language / kind / category / max price / AI verification / acquisition method / multi-route. */
 export function passesPushFilters(
   item: {
     sourceId?: string;
@@ -495,10 +495,10 @@ function matchSubscriptions(item: { title: string; summary?: string | null }, ke
 }
 
 function fmtPrice(item: FreshItem): string | null {
-  if (item.isFree) return "免费";
+  if (item.isFree) return "Free";
   if (typeof item.price !== "number" || item.price <= 0) return null;
   const v = item.price < 1 ? "<1" : String(Math.round(item.price));
-  return "约 ¥" + v;
+  return "~¥" + v;
 }
 
 function fmtDeadline(item: FreshItem): string | null {
@@ -507,63 +507,63 @@ function fmtDeadline(item: FreshItem): string | null {
   if (Number.isNaN(t)) return null;
   const days = Math.ceil((t - Date.now()) / 86_400_000);
   if (days < 0) return null;
-  if (days === 0) return "今天截止";
-  if (days <= 14) return days + " 天后截止";
+  if (days === 0) return "Ends today";
+  if (days <= 14) return days + " days left";
   return null;
 }
 
 export const SOURCE_SHORT: Record<string, string> = {
-  "linuxdo-welfare": "LINUX DO 福利",
-  "linuxdo-resource": "LINUX DO 资源",
-  "linuxdo-develop": "LINUX DO 开发调优",
-  "linuxdo-news": "LINUX DO 前沿快讯",
-  "linuxdo-domestic": "LINUX DO 国产替代",
-  "tg-pan-yunpan": "TG 网盘资源",
-  "tg-pan-yiove": "TG Yiove 资源",
-  "v2ex-free": "V2EX 免费赠送",
-  "v2ex-deals": "V2EX 优惠",
-  "v2ex-share": "V2EX 分享",
-  "v2ex-promotions": "V2EX 推广",
-  "v2ex-cloud": "V2EX 云",
-  "xiaoheihe-search": "小黑盒",
-  "zhihu-search": "知乎",
-  "xhs-search": "小红书",
+  "linuxdo-welfare": "LINUX DO Welfare",
+  "linuxdo-resource": "LINUX DO Resources",
+  "linuxdo-develop": "LINUX DO Dev & Tuning",
+  "linuxdo-news": "LINUX DO News",
+  "linuxdo-domestic": "LINUX DO Domestic Alternatives",
+  "tg-pan-yunpan": "TG Cloud Drive",
+  "tg-pan-yiove": "TG Yiove Resources",
+  "v2ex-free": "V2EX Free Giveaways",
+  "v2ex-deals": "V2EX Deals",
+  "v2ex-share": "V2EX Share",
+  "v2ex-promotions": "V2EX Promotions",
+  "v2ex-cloud": "V2EX Cloud",
+  "xiaoheihe-search": "Xiaoheihe",
+  "zhihu-search": "Zhihu",
+  "xhs-search": "Xiaohongshu",
   gamerpower: "GamerPower",
-  "epic-free": "Epic 喜加一",
-  "steam-free": "Steam 限免",
-  "gog-free": "GOG 限免",
+  "epic-free": "Epic Freebie",
+  "steam-free": "Steam Free",
+  "gog-free": "GOG Free",
   "cheapshark-free": "CheapShark",
-  "rss-isthereanydeal": "ITAD 喜加一",
+  "rss-isthereanydeal": "ITAD Freebie",
   "rss-indiegamebundles": "IndieGameBundles",
   "rss-ggdeals": "GG.deals",
-  "rss-reddit-freegames": "Reddit 游戏",
+  "rss-reddit-freegames": "Reddit Games",
   "rss-reddit-freegamesonsteam": "Reddit Steam",
-  "rss-reddit-efreebies": "Reddit 电子福利",
+  "rss-reddit-efreebies": "Reddit E-Freebies",
   "rss-reddit-gamedeals": "Reddit GameDeals",
   "rss-reddit-freebies": "Reddit Freebies",
-  "rss-reddit-apphookup": "AppHookup 限免",
-  "rss-reddit-freeebooks": "Reddit 电子书",
-  "rss-reddit-googleplay": "GooglePlay 限免",
-  "rss-keylol": "其乐",
+  "rss-reddit-apphookup": "AppHookup Free",
+  "rss-reddit-freeebooks": "Reddit Ebooks",
+  "rss-reddit-googleplay": "GooglePlay Free",
+  "rss-keylol": "Keylol",
   "rss-slickdeals": "Slickdeals",
   "rss-heyitsfree": "HeyItsFree",
   "rss-freebieshark": "FreebieShark",
-  "rss-giveawayoftheday": "今日限免软件",
+  "rss-giveawayoftheday": "Giveaway of the Day",
   "rss-vonbeau": "VonBeau",
   "rss-hip2save": "Hip2Save",
   "rss-ozbargain": "OzBargain",
   "rss-lowendbox": "LowEndBox",
-  "rss-iplaysoft": "异次元软件",
-  "tg-freegames": "TG 游戏情报",
-  "tg-cn-deals": "TG 中文羊毛",
-  "bsky-gamedeals": "Bluesky 游戏",
-  "bsky-plugins": "Bluesky 插件",
+  "rss-iplaysoft": "iPlaySoft",
+  "tg-freegames": "TG Game Intel",
+  "tg-cn-deals": "TG CN Deals",
+  "bsky-gamedeals": "Bluesky Games",
+  "bsky-plugins": "Bluesky Plugins",
   "rss-nodeseek": "NodeSeek",
-  "rss-sharewareonsale": "正版限免",
-  "rss-tickcoupon": "终身限免",
-  "rss-fuliba": "福利吧",
-  "rss-52pojie": "吾爱破解",
-  "rss-smzdm": "什么值得买",
+  "rss-sharewareonsale": "SharewareOnSale",
+  "rss-tickcoupon": "TickCoupon",
+  "rss-fuliba": "Fuliba",
+  "rss-52pojie": "52pojie",
+  "rss-smzdm": "SMZDM",
   "github-free-for-dev": "GitHub",
 };
 
@@ -572,7 +572,7 @@ export function sourceLabel(id: string): string {
 }
 
 /* ------------------------------------------------------------------ *
- * 静默时段
+ * Quiet hours
  * ------------------------------------------------------------------ */
 
 function parseHHMM(s: string): number | null {
@@ -628,7 +628,7 @@ export function isQuietNow(s = getPushSettings(), at = new Date()): boolean {
 }
 
 /* ------------------------------------------------------------------ *
- * 候选筛选
+ * Candidate filtering
  * ------------------------------------------------------------------ */
 
 type Decision = { push: boolean; reason: string; urgent: boolean; route?: PushRoute | null };
@@ -643,28 +643,28 @@ function decide(item: FreshItem, s: PushSettings, subHits: string[], route: Push
     return { push: false, reason: "", urgent: false, route };
   }
   if (s.prioritizeSubscribed && subHits.length > 0) {
-    return { push: true, reason: routeTag + "订阅命中：" + subHits.join("/"), urgent: true, route };
+    return { push: true, reason: routeTag + "subscription hit: " + subHits.join("/"), urgent: true, route };
   }
-  if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: routeTag + "含兑换码", urgent: true, route };
+  if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: routeTag + "has code", urgent: true, route };
   if (s.instantOnUrgent && URGENT.test(item.title) && item.score >= 40) {
-    return { push: true, reason: routeTag + "限量/限时", urgent: true, route };
+    return { push: true, reason: routeTag + "limited/limited-time", urgent: true, route };
   }
   const scoreGate = route ? Math.max(s.instantScore, route.minScore) : s.instantScore;
-  if (item.score >= scoreGate) return { push: true, reason: routeTag + "高分 " + Math.round(item.score), urgent: false, route };
+  if (item.score >= scoreGate) return { push: true, reason: routeTag + "high score " + Math.round(item.score), urgent: false, route };
   return { push: false, reason: "", urgent: false, route };
 }
 
 function canEnterBatch(item: FreshItem, s: PushSettings, d: Decision): boolean {
   if (matchesEntryNoise(item.title)) return false;
   if (s.aiFallbackMode !== "ignore_ai" && (item.aiKeep === false || item.kind === "noise")) return false;
-  // 已通过 AI 验真或命中白嫖/特价/开源任一频道价值信号即可进攒批，不再被纯中文 DEAL_HINT 卡死
+  // Passing AI verification, or hitting a freebie / deal / opensource channel value signal, is enough to enter batching; a pure-Chinese DEAL_HINT no longer blocks it
   const hasSignal = item.aiKeep === true || hasValueSignal(item.title, item.kind);
   if (!hasSignal && !d.push) return false;
   const batchGate = d.route ? d.route.minScore : s.batchScore;
   return item.score >= batchGate || d.push;
 }
 
-/** 近 N 小时已推送条目（带 canonical_id 聚类键），供 AI 语义去重与规则去重共用。 */
+/** Items pushed in the last N hours (with the canonical_id cluster key), shared by AI semantic dedupe and rule dedupe. */
 function recentPushedEntries(windowHours = 48): DedupCandidate[] {
   return all<{
     id: number;
@@ -699,8 +699,8 @@ function pushedLastHour(): number {
 }
 
 /**
- * 即时通道这一轮到底能发几条、几条要顺延进攒批。
- * 预览和真实推送共用这一个函数，保证「界面说会发 5 条」和实际发出去的一致。
+ * How many items this round can really go out on the instant channel, and how many slip into batching.
+ * Preview and real push share this one function, so "the UI says 5 will go out" matches what is actually sent.
  */
 export function planInstant(instantCount: number, s: PushSettings, usedThisHour: number): { send: number; defer: number; budget: number } {
   const budget = Math.max(0, s.maxPerHour - usedThisHour);
@@ -709,7 +709,7 @@ export function planInstant(instantCount: number, s: PushSettings, usedThisHour:
 }
 
 /* ------------------------------------------------------------------ *
- * 攒批队列
+ * Batch queue
  * ------------------------------------------------------------------ */
 
 type QueueItem = { id: number; sourceId: string; item: FreshItem; subHits?: string[]; route?: PushRoute | null; reason?: string };
@@ -725,7 +725,7 @@ function enqueue(entries: QueueItem[]): void {
   const seen = new Set(queue.map((q) => q.id));
   for (const e of entries) if (!seen.has(e.id)) queue.push(e);
   if (queue.length > 200) queue = queue.slice(-200);
-  // 入队即确保有定时器在跑：否则攒批关闭后再打开、或调度器晚于入队启动时，队列会一直躺着
+  // Ensure a timer is running on enqueue: otherwise, after batching is turned off and on again, or when the scheduler starts after the enqueue, the queue would just sit there
   scheduleFlush();
 }
 
@@ -754,11 +754,11 @@ export function startPushScheduler(): void {
   const s = getPushSettings();
   if (!s.enabled || !pushEnabled) return;
   scheduleFlush();
-  console.log("[push] 攒批调度已启动，间隔 " + s.batchIntervalMin + " 分钟");
+  console.log("[push] batch scheduler started, interval " + s.batchIntervalMin + " minutes");
 }
 
 /* ------------------------------------------------------------------ *
- * 消息组装
+ * Message assembly
  * ------------------------------------------------------------------ */
 
 export function parseAiMeta(aiRaw: string | null): { aiKeep: boolean | null; aiReason: string | null } {
@@ -789,20 +789,20 @@ export function itemBlock(sourceId: string, it: FreshItem, s: PushSettings, seq?
     const dl = fmtDeadline(it);
     if (dl) meta.push(dl);
   }
-  if (subHits.length) meta.push("订阅：" + subHits.join("/"));
+  if (subHits.length) meta.push("Subs: " + subHits.join("/"));
   if (detectLang(it.title) === "en" && s.langMode === "all") meta.push("EN");
-  if (s.includeScore && it.score) meta.push(Math.round(it.score) + " 分");
+  if (s.includeScore && it.score) meta.push(Math.round(it.score) + " pts");
 
   lines.push(prefix + it.title.slice(0, 110));
   lines.push("   " + meta.join(" · "));
   if (s.includeAiReason && it.aiReason) lines.push("   💡 " + it.aiReason);
-  if (it.codes.length) lines.push("   码：" + it.codes.join(" / "));
+  if (it.codes.length) lines.push("   Code: " + it.codes.join(" / "));
   lines.push("   " + it.url);
   return lines;
 }
 
 /* ------------------------------------------------------------------ *
- * 即时推送
+ * Instant push
  * ------------------------------------------------------------------ */
 
 export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise<number> {
@@ -843,13 +843,13 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
         item: it,
         subHits,
         route,
-        reason: d.reason || (route ? `[${route.name}] ` : "") + "达到攒批高分",
+        reason: d.reason || (route ? `[${route.name}] ` : "") + "met batch high-score threshold",
       });
       deduper?.markSeen(it);
     }
   }
 
-  // AI 语义去重兜底：规则聚类抓不到的「同活动不同措辞」（如 B站 BLG 夺冠送大会员 的十几种说法）
+  // AI semantic dedupe fallback: catch "same campaign, different wording" that rule clustering misses (e.g. the dozen phrasings of "BLG wins, Bilibili gives everyone a premium membership")
   if (instant.length || batched.length) {
     const targets = [...instant.map((x) => x.it), ...batched.map((q) => q.item)];
     const { intercepted } = await filterPushDuplicatesWithAi(
@@ -871,19 +871,19 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
       for (let i = batched.length - 1; i >= 0; i -= 1) {
         if (dropIds.has(batched[i]!.item.id)) batched.splice(i, 1);
       }
-      console.log(`[push] ${sourceId} AI 语义去重拦截 ${intercepted.length} 条重复`);
+      console.log(`[push] ${sourceId} AI semantic dedupe blocked ${intercepted.length} duplicates`);
     }
   }
 
   if (batched.length && s.batchIntervalMin > 0) enqueue(batched);
   if (quiet && (instant.length || batched.length)) {
     console.log(
-      `[push] 静默时段 ${s.quietHours}（${s.quietAction === "drop" ? "已跳过" : "转入攒批 " + batched.length + " 条"}）`,
+      `[push] quiet hours ${s.quietHours} (${s.quietAction === "drop" ? "skipped" : "moved to batch, " + batched.length + " items"})`,
     );
   }
 
-// 即时通道被上限截掉的条目不能丢：降级进攒批队列，按小时额度慢慢发。
-  // 攒批关闭时它们仍留在队列里（界面显示「队列中 N 条」），可手动「立即发送攒批」。
+// Items cut by the instant cap must not be lost: demote them into the batch queue and send them gradually against the hourly budget.
+  // When batching is off they stay in the queue (the UI shows "N queued") and can be sent manually with "send batch now".
   const usedThisHour = pushedLastHour();
   const plan = planInstant(instant.length, s, usedThisHour);
   const picked = instant.slice(0, plan.send);
@@ -891,14 +891,14 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
   if (overflow.length) {
     enqueue(overflow.map(({ it, reason, subHits, route }) => ({ id: it.id, sourceId, item: it, subHits, route, reason })));
     console.log(
-      `[push] ${sourceId} 即时超限 ${overflow.length} 条转攒批（每轮即时上限 ${s.maxPerInstant} 条，本小时剩余额度 ${plan.budget} 条）`,
+      `[push] ${sourceId} instant cap exceeded, moved ${overflow.length} items to batch (per-round instant cap ${s.maxPerInstant}, remaining budget this hour ${plan.budget})`,
     );
   }
   if (!picked.length) return 0;
 
   let sent = 0;
   for (const { it, reason, subHits, route } of picked) {
-    const prefix = route?.header ? route.header + " · " : s.customHeader ? s.customHeader + " · " : "⚡ 新动态 · ";
+    const prefix = route?.header ? route.header + " · " : s.customHeader ? s.customHeader + " · " : "⚡ New · ";
     const lines = [prefix + reason, "", ...itemBlock(sourceId, it, s, undefined, subHits)];
     const text = lines.join("\n");
     try {
@@ -909,16 +909,16 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
       sent += 1;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[push] 即时推送失败:", msg);
+      console.error("[push] instant push failed:", msg);
       logPush("instant", [it.id], text, 0, false, msg, reason);
       break;
     }
   }
-  if (sent) console.log("[push] " + sourceId + " 即时推送 " + sent + " 条");
+  if (sent) console.log("[push] " + sourceId + " instant push " + sent + " items");
   return sent;
 }
 
-/** 供后台 AI 补审队列调用：对刚审完通过、尚未推送过的条目触发一次推送判定。 */
+/** Called by the background AI re-review queue: run a push decision for an item that has just been approved and not yet pushed. */
 export async function pushReviewedByIds(sourceId: string, itemIds: number[]): Promise<number> {
   if (!itemIds.length) return 0;
   const s = getPushSettings();
@@ -981,7 +981,7 @@ published_at: string | null;
 }
 
 /* ------------------------------------------------------------------ *
- * 攒批推送（发送前二次回查 DB 最新状态 / 最新屏蔽词 / 最新推送规则）
+ * Batch push (re-checks the latest DB state / latest blocklist / latest push rules before sending)
  * ------------------------------------------------------------------ */
 
 export async function flushBatch(force = false): Promise<number> {
@@ -996,7 +996,7 @@ export async function flushBatch(force = false): Promise<number> {
   const rawTake = queue.splice(0, Math.min(s.maxPerBatch, budget));
   if (!rawTake.length) return 0;
 
-  // 二次回查 DB，避免「队列等待期间被用户关闭 / 加了屏蔽词 / 后台 AI 判非福利」仍然发出去
+  // Re-check the DB so nothing goes out that the user disabled, blocklisted, or the background AI judged not a freebie while it waited in the queue
   const ids = rawTake.map((q) => q.id);
   const ph = ids.map(() => "?").join(",");
   const dbRows = all<{
@@ -1031,7 +1031,7 @@ status: string;
   const refreshed: QueueItem[] = [];
   for (const q of rawTake) {
     const r = rowMap.get(q.id);
-    // 若 DB 中已不存在（如测试/手动删除）或已关闭/已推，跳过；若是在库中则严格按最新状态重检
+    // If the row no longer exists (test or manual delete) or is disabled/already pushed, skip it; if it is still there, re-check strictly against the latest state
     if (!r || r.status !== "active" || r.pushed_at !== null) continue;
     if (isBlocked(r, rules)) continue;
     let codes: string[] = [];
@@ -1078,7 +1078,7 @@ status: string;
       take.push(entry.q);
     }
   }
-// AI 语义去重：攒批发送前再与已推送记录比对一次，防「同活动不同措辞」重复轰炸
+// AI semantic dedupe: compare once more against already-pushed records before a batch goes out, to prevent "same campaign, different wording" spam
   if (take.length) {
     const { intercepted } = await filterPushDuplicatesWithAi(
       take.map((q) => ({
@@ -1094,7 +1094,7 @@ status: string;
     if (intercepted.length) {
       const dropIds = new Set(intercepted.map((x) => x.item.id));
       take = take.filter((q) => !dropIds.has(q.id));
-      console.log(`[push] 攒批 AI 语义去重拦截 ${intercepted.length} 条重复`);
+      console.log(`[push] batch AI semantic dedupe blocked ${intercepted.length} duplicates`);
     }
   }
   if (!take.length) return 0;
@@ -1108,8 +1108,8 @@ status: string;
     blocks.push("");
   });
   const batchTitle = s.customHeader
-    ? `${s.customHeader} · 汇总 ${take.length} 条`
-    : `📦 本轮新发现 ${take.length} 条`;
+    ? `${s.customHeader} · ${take.length} items total`
+    : `📦 ${take.length} new this round`;
   const text = [batchTitle, "", ...blocks].join("\n").trim();
 
   try {
@@ -1119,11 +1119,11 @@ status: string;
       run("UPDATE items SET pushed_at = ?, title_key = ? WHERE id = ?", now, titleKey(q.item.title), q.id);
     }
     logPush("batch", take.map((q) => q.id), text, take.length, true, null, summarizeReasons(take.map((q) => q.reason)));
-    console.log("[push] 攒批推送 " + take.length + " 条");
+    console.log("[push] batch push " + take.length + " items");
     return take.length;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[push] 攒批推送失败:", msg);
+    console.error("[push] batch push failed:", msg);
     logPush("batch", take.map((q) => q.id), text, 0, false, msg, summarizeReasons(take.map((q) => q.reason)));
     queue.unshift(...take);
     return 0;
@@ -1131,14 +1131,14 @@ status: string;
 }
 
 /* ------------------------------------------------------------------ *
- * 推送记录与状态
+ * Push records and state
  * ------------------------------------------------------------------ */
 
-/** 把一批条目的命中原因压成一行摘要：去掉路由前缀、把「高分 78」归一成「高分」，再按条数排序。 */
+/** Compress a batch of items' match reasons into one summary line: strip the route prefix, normalize "high score 78" to "high score", then sort by count. */
 function summarizeReasons(reasons: (string | undefined)[]): string {
   const counts = new Map<string, number>();
   for (const r of reasons) {
-    const key = (r?.trim() || "达到攒批高分").replace(/^\[[^\]]+\]\s*/, "").replace(/高分\s*\d+/, "高分");
+    const key = (r?.trim() || "met batch high-score threshold").replace(/^\[[^\]]+\]\s*/, "").replace(/high score\s*\d+/, "high score");
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return [...counts.entries()]
@@ -1198,7 +1198,7 @@ export function pushStats() {
 }
 
 /* ------------------------------------------------------------------ *
- * 预览：按当前全套推送筛选条件算一遍，并给出各维度拦截诊断
+ * Preview: runs the full set of push filters once and reports the block reasons per dimension
  * ------------------------------------------------------------------ */
 
 export function previewPush(limit = 6): {
@@ -1207,15 +1207,15 @@ export function previewPush(limit = 6): {
   queued: number;
   scanned: number;
   matched: number;
-  /** 够格「即时」的总条数（不受展示条数限制） */
+  /** Total number of items eligible for "instant" (not limited by the display count) */
   instantTotal: number;
-  /** 按每轮即时上限与小时额度，这一批实际能即时发出的条数 */
+  /** How many of this batch can really go out instantly given the per-round instant cap and the hourly budget */
   sendableInstant: number;
-  /** 够格「攒批」的总条数（已含被即时上限挤过来的部分） */
+  /** Total number of items eligible for "batch" (including those pushed over from the instant cap) */
   batchTotal: number;
-  /** 被即时上限挤进攒批队列的条数 */
+  /** Number of items pushed into the batch queue by the instant cap */
   deferred: number;
-  /** 本小时已推条数 */
+  /** Items already pushed this hour */
   usedThisHour: number;
   caps: { maxPerInstant: number; maxPerHour: number; maxPerBatch: number; batchIntervalMin: number; budget: number };
   rejectedBy: {
@@ -1265,9 +1265,9 @@ published_at: string | null;
   const instant: string[] = [];
   const batch: string[] = [];
   let matched = 0;
-  /** 去重后真正够格「即时」的条数（不受展示条数限制） */
+  /** Number of items truly eligible for "instant" after dedupe (not limited by the display count) */
   let instantTotal = 0;
-  /** 去重后够格「攒批」的条数（含被即时上限挤过来的部分，末尾再补） */
+  /** Number of items eligible for "batch" after dedupe (including those pushed over from the instant cap, appended at the end) */
   let batchTotal = 0;
   const rejectedBy = {
     blocked: 0,
@@ -1295,7 +1295,7 @@ published_at: string | null;
       rejectedBy.duplicate += 1;
       continue;
 }
-    // 零成本复用 AI 语义去重落库的聚类键：同簇已推送过的条目在预览里也如实显示为重复
+    // Reuse the cluster key stored by AI semantic dedupe for free: items already pushed in the same cluster are honestly shown as duplicates in the preview
     if (r.canonical_id != null) {
       const pushedSibling = get<{ id: number }>(
         "SELECT id FROM items WHERE pushed_at IS NOT NULL AND canonical_id = ? AND id != ? LIMIT 1",
@@ -1355,12 +1355,12 @@ published_at: string | null;
       const prefix = route?.header ? route.header + " · " : s.customHeader ? s.customHeader + " · " : "⚡ ";
       instant.push(prefix + d.reason + "\n" + block);
     } else if (!d.push && batchable && batch.length < limit) {
-      const routeNote = hasRoutes && route ? `[路由: ${route.name}]\n` : "";
+      const routeNote = hasRoutes && route ? `[Route: ${route.name}]\n` : "";
       batch.push(routeNote + block);
     }
   }
   const usedThisHour = pushedLastHour();
-  // 复用真实推送那套算法：预览说「能发 N 条」，实际就发 N 条
+  // Reuse the real push algorithm: what the preview calls "can send N" is what actually gets sent
   const plan = planInstant(instantTotal, s, usedThisHour);
   const sendableInstant = plan.send;
   const deferred = plan.defer;

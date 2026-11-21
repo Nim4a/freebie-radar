@@ -1,6 +1,6 @@
 /**
- * 管理端凭据：只存在 sessionStorage，关掉标签页就没了。
- * 用全局 fetch 包装统一带上 Authorization，避免每个调用点都要改。
+ * Admin credentials: stored only in sessionStorage, gone when the tab closes.
+ * A global fetch wrapper attaches Authorization so no call site has to change.
  */
 const KEY = "radar-admin-token";
 
@@ -16,7 +16,7 @@ export function setToken(token: string): void {
   try {
     sessionStorage.setItem(KEY, token);
   } catch {
-    /* 隐私模式下不可用，退化为不保存 */
+    /* Unavailable in private mode; degrade to not saving */
   }
 }
 
@@ -24,14 +24,14 @@ export function clearToken(): void {
   try {
     sessionStorage.removeItem(KEY);
   } catch {
-    /* 同上 */
+    /* Same as above */
   }
 }
 
 let installed = false;
 export const ADMIN_AUTH_EVENT = "radar-admin-auth-change";
 
-/** 在 main.tsx 里调用一次：所有 fetch 自动附带管理密码。 */
+/** Call once in main.tsx: every fetch automatically carries the admin password. */
 export function installAuthFetch(): void {
   if (installed || typeof window === "undefined") return;
   installed = true;
@@ -55,7 +55,7 @@ export function installAuthFetch(): void {
   }) as typeof fetch;
 }
 
-/** 验证密码：命中返回 true。 */
+/** Verify the password: returns true on a match. */
 export async function verifyToken(token: string): Promise<boolean> {
   const r = await fetch("/api/auth/check", { headers: { authorization: `Bearer ${token}` } });
   if (!r.ok) return false;
