@@ -4,17 +4,17 @@ import { cleanText, extractImageFromHtml, parseDate } from "../enrich/normalize.
 import type { Collector, RawItem } from "./types.ts";
 
 /**
- * linux.do 采集：走 Discourse 的 RSS，不走 JSON。
+ * linux.do collector: uses Discourse RSS, not JSON.
  *
- * 为什么不是 JSON：
- *  /c/36/l/latest.json 直连 403，只能过 FlareSolverr 解挑战，每轮 40-70 秒，
- *  送码帖的时效性直接被吃掉。RSS 小一个数量级，且 CF 对它的策略宽松得多。
+ * Why not JSON:
+ *  a direct request to /c/36/l/latest.json returns 403 and only FlareSolverr gets through, taking 40-70 seconds per round,
+ *  which eats the timeliness of code-giveaway posts. RSS is an order of magnitude smaller and Cloudflare is far more lenient with it.
  *
- * 取 RSS 的两条路：
- *  1. 直连（curl 能拿 200，几百毫秒）
- *  2. 直连被拦时切 FlareSolverr —— Node 的 fetch 用的是 undici，
- *     TLS 指纹和 curl 不同，linux.do 会单独给它 403，所以这条路必须留着。
- *     session 复用后单次约 1.4 秒，仍远快于 JSON 的 40-70 秒。
+ * Two ways to fetch the RSS:
+ *  1. direct request (curl gets a 200 in a few hundred milliseconds)
+ *  2. when the direct request is blocked, fall back to FlareSolverr -- Node's fetch uses undici,
+ *     whose TLS fingerprint differs from curl's, so linux.do returns 403 specifically for it; this path has to stay.
+ *     with session reuse a single request takes about 1.4 seconds, still far faster than 40-70 seconds for JSON.
  */
 
 const parser = new XMLParser({
@@ -50,7 +50,7 @@ function parseRss(xml: string): FeedItem[] {
   return asArray(rss.channel.item);
 }
 
-/** 从 https://linux.do/t/xxx/3166375 里取话题 id */
+/** extract the topic id from https://linux.do/t/xxx/3166375 */
 function topicIdOf(link: string): string | null {
   const m = /\/t\/(?:[^/]+\/)?(\d+)/.exec(link);
   return m ? m[1]! : null;
@@ -69,8 +69,8 @@ function toRawItem(it: FeedItem, categoryName: string): RawItem | null {
     url: link,
     title: cleanText(title, 200),
     summary: cleanText(description, 400),
-    // RSS 的 description 就是首帖摘要，做「送什么、什么条件」的判断够了，
-    // 也省掉了原来每帖一次的正文请求（5 帖 = 5 次 FlareSolverr）
+    // the RSS description is the first-post summary, which is enough to judge「送什么、什么条件」(what is given and on what terms),
+    // and it also removes the previous one-body-request-per-post (5 posts = 5 FlareSolverr runs)
     content: cleanText(description, 1200),
     author: textOf(it["dc:creator"]) || null,
     publishedAt: parseDate(textOf(it.pubDate)),
@@ -85,7 +85,7 @@ type Ctx = {
   log(msg: string): void;
 };
 
-/** 限流信号：采集器据此把本轮标记为 degraded 而不是 failed。 */
+/** rate-limit signal: the collector uses it to mark the round degraded instead of failed. */
 export class RateLimited extends Error {
   constructor(message: string) {
     super(message);
@@ -102,8 +102,8 @@ async function fetchRss(ctx: Ctx, url: string): Promise<string> {
       ctx.log(`直连 RSS ok ${url}`);
       return res.body;
     }
-    // 429 是限流，不是拦截。回落 FlareSolverr 要花 30 秒重解挑战去拿同一份数据，
-    // 拿到的还是被限流的内容，纯浪费——直接放弃本轮，等下一个采集周期。
+    // 429 is a rate limit, not a block. Falling back to FlareSolverr spends 30 seconds re-solving the challenge for the same data,
+    // and would still fetch the rate-limited content -- pure waste. Give this round up and wait for the next cycle.
     if (res.status === 429) {
       ctx.log(`直连被限流（HTTP 429），本轮跳过，不回落 FlareSolverr`);
       throw new RateLimited("HTTP 429 限流，本轮跳过");
@@ -122,7 +122,7 @@ async function fetchRss(ctx: Ctx, url: string): Promise<string> {
     );
   }
   const res = await flaresolverrGet(url);
-  // FlareSolverr 也可能撞上限流，同样不该当失败重试
+  // FlareSolverr can hit the rate limit too, and that should not be treated as a retryable failure either
   if (res.status === 429) throw new RateLimited("FlareSolverr 也返回 429，本轮跳过");
   if (res.status !== 200) throw new Error("FlareSolverr 取 RSS HTTP " + res.status);
   return res.body;
@@ -144,7 +144,7 @@ export const linuxdoCollector: Collector = {
     let items: RawItem[] = [];
     let degraded: string | null = null;
 
-    // 1) 分类 RSS：精准，只有目标板块
+    // 1) category RSS: precise, only the target board
     if (cfg.rssSlug) {
       try {
         const xml = await fetchRss(ctx as Ctx, `https://linux.do/c/${cfg.rssSlug}/${cfg.categoryId}.rss`);
@@ -153,7 +153,7 @@ export const linuxdoCollector: Collector = {
           .filter((x): x is RawItem => x !== null);
         ctx.log(`分类 RSS ${items.length} 条`);
       } catch (err) {
-        // 被限流就别试 latest.rss 了，第二条同样会 429，白等一轮
+        // when rate-limited, do not try latest.rss: the second feed will 429 as well, wasting a round
         if (err instanceof RateLimited) {
           ctx.log(`${err.message}（本轮直接结束，不回落）`);
           return { items: [], cursor: ctx.cursor, degraded: err.message };
@@ -163,7 +163,7 @@ export const linuxdoCollector: Collector = {
       }
     }
 
-    // 2) 兜底：latest.rss + 按 category 过滤（只有最新 30 条，覆盖全部板块）
+    // 2) fallback: latest.rss + filter by category (only the latest 30 entries, covering all boards)
     if (!items.length) {
       try {
         const xml = await fetchRss(ctx as Ctx, "https://linux.do/latest.rss");

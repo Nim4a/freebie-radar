@@ -3,7 +3,7 @@ import type { Collector } from "./types.ts";
 const PAGE_SIZE = 2;
 const TOTAL_PAGES = 3;
 
-/** 自检用假源：验证 采集 → 入库 → 游标推进 → 失败隔离。 */
+/** fake source for self-tests: verifies collect → store → cursor advance → failure isolation. */
 export const mockCollector: Collector = {
   kind: "mock",
   label: "Mock 源（自检用）",

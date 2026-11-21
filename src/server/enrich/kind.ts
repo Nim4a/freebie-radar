@@ -4,7 +4,7 @@ import { contentSignals } from "./evidence.ts";
 
 export type { ContentKind };
 export { KIND_LABEL, isContentKind };
-/** 兼容旧名：可被识别的全部形态（含 noise）。 */
+/** Kept for the old name: every kind that can be recognised (including noise). */
 export { KIND_SET as VALID_KINDS };
 
 const OPENSOURCE_SOURCES = new Set([
@@ -67,9 +67,9 @@ const INFO_SOURCES = new Set([
 ]);
 
 /**
- * 规则兜底推断内容形态（AI 未审或未返回 kind 时使用）。
- * 原则：硬噪音判 noise；明确开源且无纯白嫖词判 opensource；付费/黑五/特价促销判 deal；
- * 权威时政/国际要闻判 news；经济/股票/科技/深度指南判 info；其余按免费信号落位。
+ * Rule fallback for inferring the content kind (used when the AI has not reviewed the item or returned no kind).
+ * Principles: hard noise -> noise; clearly open source with no pure-freebie wording -> opensource; paid / Black Friday / discount promo -> deal;
+ * authoritative politics / world news -> news; economy / stocks / tech / in-depth guides -> info; everything else lands by its free signal.
  */
 export function guessKind(input: {
   title: string;
@@ -114,8 +114,8 @@ export function guessKind(input: {
   if (hasPromoWord && !hasDealWord && !input.isFree) {
     return "deal";
   }
-  // 交易/拼车类：分类本身已确认是「明盘出鸡 / 发车合租」，不再额外要求促销词
-  // （「50出」「溢价50出」「出租…车位」都不含促销词，旧逻辑因此把它们判成 info）
+  // Trade / carpool: the category itself already confirms "listed for sale / leaving for a shared slot", so no extra promo word is required
+  // ("50 chu" / "premium 50 chu" / "seat for rent..." carry no promo word, which is why the old logic labelled them info)
   if ((input.category === "carpool" || input.category === "trade") && !hasDealWord) {
     return "deal";
   }
@@ -136,7 +136,7 @@ export function guessKind(input: {
     input.category === "news" ||
     input.category === "edu"
   ) {
-    // 非权威新闻源（如什么值得买/IT之家/社区）不得落入 news，统一归为 info（导购站由上方 DEAL_SOURCES 先拦）
+    // Non-authoritative news sources (e.g. SMZDM / ITHome / community sites) must not land in news; they map to info (advice sites are already blocked above by DEAL_SOURCES)
     return "info";
   }
   return guard ? "info" : "freebie";
@@ -158,10 +158,10 @@ function coerceNonNewsKind(fallbackInput: Parameters<typeof guessKind>[0]): Cont
 const TRADE_LIKE_CATEGORIES = new Set(["trade", "carpool", "goods"]);
 
 /**
- * 分类与形态的一致性约束（最后一道闸）。
- * 分类已经确认是「二手交易 / 拼车合租 / 实物优惠」时，形态不可能是「行业资讯」：
- * 以前这里只做单向降级（AI 说 deal 但没促销词就打回 info），于是出现
- * category=trade + kind=info 的自相矛盾组合（全库 500+ 条）。
+ * Category/kind consistency constraint (the last gate).
+ * When the category is already confirmed as "second-hand trade / carpool / physical discount", the kind cannot be "industry news":
+ * This used to downgrade in one direction only (the AI said deal but there was no promo word, so it was pushed back to info), which produced
+ * self-contradictory category=trade + kind=info combinations (500+ rows in the whole DB).
  */
 export function alignKindWithCategory(
   kind: ContentKind,
@@ -173,25 +173,25 @@ export function alignKindWithCategory(
   if (input.freebieOnlySource) return kind;
   const signals = contentSignals(input.title, input.summary);
   const paidish = input.obtain === "paid" || (typeof input.price === "number" && input.price > 0);
-  // 有明确领取/白送证据且不需要付费的实物福利归 freebie（如「免费送小鸡」「PDD 免费领」）；
-  // 需要付费的「领取优惠券」仍是好价，不能因为出现「领取」就变福利
+  // Physical freebies with clear claim / give-away evidence and no payment go to freebie (e.g. "free VPS giveaway", "free claim on PDD");
+  // a paid "claim a coupon" is still a deal - the word "claim" alone must not turn it into a freebie
   if (signals.claim && !paidish) return "freebie";
-  // 编辑性内容（财报/事故/政策报道）撞上交易词时不硬改
+  // Editorial content (earnings / accidents / policy coverage) that trips a trade word is not force-changed
   if (signals.editorial && !signals.promotion) return kind;
-  // 交易/拼车：分类已确认是明盘转让或发车，形态就是 deal
+  // Trade / carpool: the category already says listed transfer or departure, so the kind is deal
   if (category === "trade" || category === "carpool") return "deal";
-  // goods（实物/优惠）默认不是资讯：AI 没给形态时按价格/免费信号落位
+  // goods (physical/discount) is not news by default: when the AI gives no kind, land it by price / free signal
   if (category === "goods" && kind === "info") {
     if (signals.claim) return "freebie";
     if (paidish) return "deal";
-    // 注意：obtain=free 只代表「没检测到价格」，不是福利证据；
-    // 用它兜底会把「什么值得买」的测评文全判成白嫖福利。
+    // Note: obtain=free only means "no price detected", it is not freebie evidence;
+    // using it as the fallback labelled every SMZDM review as a freebie.
   }
-  // goods：有价格或促销证据才算好价，其余保留原判
+  // goods: only price or promo evidence makes it a deal; otherwise keep the original verdict
   return paidish || signals.promotion ? "deal" : kind;
 }
 
-/** 结合 AI 输出与规则上下文归一化最终 kind。 */
+/** Normalises the final kind from the AI output plus the rule context. */
 export function resolveKind(
   aiKind: unknown,
   aiKeep: boolean | null | undefined,
@@ -218,7 +218,7 @@ function resolveKindRaw(
     if (aiKind === "opensource" && (fallbackInput.category === "headline" || fallbackInput.category === "world" || fallbackInput.category === "stock")) {
       return guessKind(fallbackInput);
     }
-    // 重要新闻严格限定于权威新闻源，禁止导购/购物/普通社区（如什么值得买、IT之家等）混入「重要新闻」
+    // Important news is strictly limited to authoritative news sources; advice / shopping / ordinary community sites (SMZDM, ITHome, ...) must not be mixed into "important news"
     if (aiKind === "news" && !isAuthoritativeNewsSource(fallbackInput.sourceId, fallbackInput.kindHint)) {
       return coerceNonNewsKind(fallbackInput);
     }

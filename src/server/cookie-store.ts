@@ -76,9 +76,9 @@ export function siteKeyOfSource(sourceId: string): CookieSiteKey | null {
 }
 
 /**
- * 兼容解析两种常见浏览器导出格式：
- * 1. Request Header 字符串（可带 `Cookie:` 前缀）：`a=1; b=2; z_c0="..."`
- * 2. Cookie-Editor / Playwright JSON 数组：`[{"name":"z_c0","value":"...","domain":".zhihu.com"}]`
+ * Tolerant parser for the two common browser export formats:
+ * 1. Request header string (an optional `Cookie:` prefix is allowed): `a=1; b=2; z_c0="..."`
+ * 2. Cookie-Editor / Playwright JSON array: `[{"name":"z_c0","value":"...","domain":".zhihu.com"}]`
  */
 export function parseCookieInput(rawInput: string, site: CookieSiteKey): ParsedCookie[] {
   const defaultDomain = SITE_DOMAINS[site];
@@ -106,7 +106,7 @@ export function parseCookieInput(rawInput: string, site: CookieSiteKey): ParsedC
         return [...seen.values()];
       }
     } catch {
-      /* 若不是合法 JSON，回退按 k=v; 解析 */
+      /* If it is not valid JSON, fall back to k=v; parsing */
     }
   }
 
@@ -180,7 +180,7 @@ export function updateCookieSettings(patch: {
       }
       const parsed = parseCookieInput(raw, site);
       if (!parsed.length) {
-        throw new Error(`${site} Cookie 格式无法识别，请粘贴浏览器 Cookie 字符串或 Cookie-Editor JSON`);
+        throw new Error(`${site} Cookie format not recognized; paste a browser Cookie string or Cookie-Editor JSON`);
       }
       next.sites[site] = { raw, cookies: parsed, updatedAt: now };
     }
@@ -216,9 +216,9 @@ export function hasCookieConfiguredForSource(sourceId: string): boolean {
   const site = siteKeyOfSource(sourceId);
   if (!site) return false;
   const s = getCookieSettings();
-  // NGA 只需 HTTP + Cookie，不依赖 VPS 无头执行器
+  // NGA only needs plain HTTP + Cookie, no VPS headless runner
   if (site === "nga") return (s.sites.nga?.cookies?.length ?? 0) > 0;
-  // 微博同理：PC 端 ajax 接口直连即可，不需要无头执行器
+  // Weibo is the same: the PC ajax endpoint is reachable directly, no headless runner needed
   if (site === "weibo") return (s.sites.weibo?.cookies?.length ?? 0) > 0;
   return Boolean(s.runnerUrl && (s.sites[site]?.cookies?.length ?? 0) > 0);
 }

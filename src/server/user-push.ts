@@ -23,7 +23,7 @@ import type { FreshItem } from "./collectors/index.ts";
 import { postWebhook as sendWebhook, validateWebhookUrl } from "./webhook.ts";
 
 /* ------------------------------------------------------------------ *
- * 个人推送配置
+ * Personal push configuration
  * ------------------------------------------------------------------ */
 
 export type UserPushConfig = {
@@ -32,7 +32,7 @@ export type UserPushConfig = {
   botTokenMask: string;
   chatId: string;
   settings: PushSettings;
-  /** 是否继承全站基础噪音屏蔽词（默认开，用户可关） */
+  /** Whether to inherit the site-wide base noise blocklist (on by default; users can turn it off) */
   useGlobalBlocks: boolean;
   dailyEnabled: boolean;
   consecutiveFails: number;
@@ -102,14 +102,14 @@ export function getUserPushConfig(userId: number): UserPushConfig {
   return rowToConfig(row);
 }
 
-/** 解密个人 Bot Token；失败视为未配置（密钥换过），不把错误抛给调用方 */
+/** Decrypt a personal Bot Token; on failure treat it as unconfigured (the key was rotated) instead of throwing at the caller */
 export function resolveUserBotToken(userId: number): string | null {
   const row = get<{ bot_token_enc: string | null }>("SELECT bot_token_enc FROM user_push_configs WHERE user_id = ?", userId);
   if (!row?.bot_token_enc) return null;
   try {
     return decryptSecret(row.bot_token_enc);
   } catch {
-    console.warn("[user-push] 用户", userId, "的 Bot Token 无法解密，已视为未配置");
+    console.warn("[user-push] the Bot Token of user", userId, "cannot be decrypted; treating it as unconfigured");
     return null;
   }
 }
@@ -130,10 +130,10 @@ export function saveUserPushConfig(userId: number, patch: UserPushPatch): UserPu
   if (nextSettings.webhookUrl) validateWebhookUrl(nextSettings.webhookUrl);
   if (!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(nextSettings.quietHours) ||
       nextSettings.quietHours.split("-").some((part) => Number(part.slice(0, 2)) > 23 || Number(part.slice(3)) > 59)) {
-    throw new Error("免打扰时段格式应为 HH:MM-HH:MM");
+    throw new Error("quiet hours must use the HH:MM-HH:MM format");
   }
-  try { new Intl.DateTimeFormat("en", { timeZone: nextSettings.timezone }); } catch { throw new Error("时区无效"); }
-  // 阈值联动与上限夹紧，防止用户填出「攒批阈值 > 即时阈值」这种自相矛盾
+  try { new Intl.DateTimeFormat("en", { timeZone: nextSettings.timezone }); } catch { throw new Error("invalid timezone"); }
+  // Keep the thresholds in step and clamp the upper bounds, so a user cannot end up with "batch threshold > instant threshold"
   const instantScore = clampNum(nextSettings.instantScore, 0, 100, cur.settings.instantScore);
   const batchScore = Math.min(clampNum(nextSettings.batchScore, 0, 100, cur.settings.batchScore), instantScore);
   nextSettings.instantScore = instantScore;
@@ -150,7 +150,7 @@ export function saveUserPushConfig(userId: number, patch: UserPushPatch): UserPu
     mask = "";
   } else if (typeof patch.botToken === "string" && patch.botToken.trim()) {
     const token = patch.botToken.trim();
-    if (!/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token)) throw new Error("Bot Token 格式不对（形如 123456789:AAxxxx）");
+    if (!/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token)) throw new Error("malformed Bot Token (expected something like 123456789:AAxxxx)");
     enc = encryptSecret(token);
     mask = maskBotToken(token);
   }
@@ -160,7 +160,7 @@ export function saveUserPushConfig(userId: number, patch: UserPushPatch): UserPu
   const useGlobalBlocks = typeof patch.useGlobalBlocks === "boolean" ? patch.useGlobalBlocks : cur.useGlobalBlocks;
   const dailyEnabled = typeof patch.dailyEnabled === "boolean" ? patch.dailyEnabled : cur.dailyEnabled;
   const ready = nextSettings.deliverVia === "webhook" ? Boolean(nextSettings.webhookUrl) : Boolean(enc) && Boolean(chatId);
-  if (enabled && !ready) throw new Error(nextSettings.deliverVia === "webhook" ? "请先保存 Webhook 地址再开启推送" : "请先保存 Bot Token 与 Chat ID 再开启推送");
+  if (enabled && !ready) throw new Error(nextSettings.deliverVia === "webhook" ? "save the Webhook URL before enabling pushes" : "save the Bot Token and Chat ID before enabling pushes");
   nextSettings.enabled = enabled;
 
   run(
@@ -198,7 +198,7 @@ function clampNum(v: unknown, min: number, max: number, fallback: number): numbe
 }
 
 /* ------------------------------------------------------------------ *
- * 个人屏蔽词 / 关注词
+ * Personal blocklist / watch words
  * ------------------------------------------------------------------ */
 
 export function loadUserBlockRules(userId: number, includeGlobal: boolean): BlockRule[] {
@@ -210,7 +210,7 @@ export function loadUserBlockRules(userId: number, includeGlobal: boolean): Bloc
   const global = all<BlockRule>(
     "SELECT id, pattern, mode, scope, enabled, created_at FROM block_rules WHERE enabled = 1 ORDER BY id",
   );
-  // 全局规则的 id 可能与个人规则撞号，加偏移避免正则缓存/去重键串台
+  // A personal rule id can collide with a global rule id, so offset them to keep regex caches and dedup keys apart
   return [...global.map((r) => ({ ...r, id: r.id + 1_000_000 })), ...own];
 }
 
@@ -221,7 +221,7 @@ export function loadUserSubscriptions(userId: number): string[] {
 }
 
 /* ------------------------------------------------------------------ *
- * 送达记录
+ * Delivery records
  * ------------------------------------------------------------------ */
 
 type DeliveryStatus = "queued" | "sent" | "failed";
@@ -284,7 +284,7 @@ function recentUserSeeds(userId: number, includeQueued = true): DedupeEntry[] {
 }
 
 /* ------------------------------------------------------------------ *
- * 启用中的用户
+ * Enabled users
  * ------------------------------------------------------------------ */
 
 type ActiveUser = { userId: number; settings: PushSettings; chatId: string; token: string; useGlobalBlocks: boolean; via: "telegram" | "webhook" };
@@ -318,7 +318,7 @@ function activeUsers(userId?: number): ActiveUser[] {
   return out;
 }
 
-/** 采集侧用它决定「就算全局 Bot 没配，也要跑推送链路」 */
+/** The collector side uses this to decide "run the push pipeline even when the global Bot is not configured" */
 export function hasEnabledUserPush(): boolean {
   return (get<{ n: number }>("SELECT COUNT(*) AS n FROM user_push_configs WHERE enabled = 1")?.n ?? 0) > 0;
 }
@@ -328,7 +328,7 @@ export function enabledUserPushCount(): number {
 }
 
 /* ------------------------------------------------------------------ *
- * 单用户判定（与全局 decide 同口径，但用个人设置与个人规则）
+ * Per-user decision (same criteria as the global decide, but using personal settings and personal rules)
  * ------------------------------------------------------------------ */
 
 type UserDecision = { push: boolean; reason: string; urgent: boolean; route: PushRoute | null };
@@ -362,14 +362,14 @@ function decideForUser(item: FreshItem, s: PushSettings, subHits: string[], rout
   const routeTag = route ? `[${route.name}] ` : "";
   if (route && !route.instant) return { push: false, reason: "", urgent: false, route };
   if (s.prioritizeSubscribed && subHits.length > 0) {
-    return { push: true, reason: routeTag + "订阅命中：" + subHits.join("/"), urgent: true, route };
+    return { push: true, reason: routeTag + "subscription hit: " + subHits.join("/"), urgent: true, route };
   }
-  if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: routeTag + "含兑换码", urgent: true, route };
+  if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: routeTag + "has code", urgent: true, route };
   if (s.instantOnUrgent && URGENT.test(item.title) && item.score >= 40) {
-    return { push: true, reason: routeTag + "限量/限时", urgent: true, route };
+    return { push: true, reason: routeTag + "limited/limited-time", urgent: true, route };
   }
   const gate = route ? Math.max(s.instantScore, route.minScore) : s.instantScore;
-  if (item.score >= gate) return { push: true, reason: routeTag + "高分 " + Math.round(item.score), urgent: false, route };
+  if (item.score >= gate) return { push: true, reason: routeTag + "high score " + Math.round(item.score), urgent: false, route };
   return { push: false, reason: "", urgent: false, route };
 }
 
@@ -383,14 +383,14 @@ function canBatchForUser(item: FreshItem, s: PushSettings, d: UserDecision): boo
 }
 
 /* ------------------------------------------------------------------ *
- * 发送
+ * Sending
  * ------------------------------------------------------------------ */
 
 /**
- * 通用 webhook 投递：POST JSON。
- * 之所以做这个而不是「QQ 官方 Bot 推送」——QQ 官方机器人只允许被动回复（同一条 msg_id 最多回 5 条），
- * 没有可用的主动推送通道；要推到 QQ 得靠 NapCat / Lagrange 这类 OneBot 实现，它们正好提供 HTTP 接口，
- * 所以 webhook 才是能真正落地的路子（顺带覆盖 Bark / 飞书 / 钉钉 / Slack / 自建）。
+ * Generic webhook delivery: POST JSON.
+ * This exists instead of "official QQ Bot push" because official QQ bots only allow passive replies (at most 5 per msg_id)
+ * and expose no active push channel; pushing to QQ needs a OneBot implementation such as NapCat / Lagrange, which happens to expose an HTTP API,
+ * so a webhook is the only workable route (it also covers Bark / Feishu / DingTalk / Slack / self-hosted).
  */
 async function postWebhook(settings: PushSettings, text: string): Promise<void> {
   await sendWebhook(settings.webhookUrl, text, settings.webhookSecret);
@@ -406,7 +406,7 @@ async function sendToUser(user: ActiveUser, text: string): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const fails = (get<{ n: number }>("SELECT consecutive_fails AS n FROM user_push_configs WHERE user_id = ?", user.userId)?.n ?? 0) + 1;
-    // 连续 3 次失败（token 失效 / chat_id 填错 / 被拉黑）就自动停用，避免每轮都白跑
+    // 3 failures in a row (revoked token / wrong chat_id / blocked) auto-disable it, so the loop does not burn every round
     const disable = fails >= 3;
     run(
       "UPDATE user_push_configs SET consecutive_fails = ?, last_error = ?, enabled = CASE WHEN ? THEN 0 ELSE enabled END WHERE user_id = ?",
@@ -415,7 +415,7 @@ async function sendToUser(user: ActiveUser, text: string): Promise<void> {
       disable ? 1 : 0,
       user.userId,
     );
-    if (disable) console.warn(`[user-push] 用户 ${user.userId} 连续 ${fails} 次发送失败，已自动停用个人推送`);
+    if (disable) console.warn(`[user-push] user ${user.userId} failed ${fails} sends in a row; personal push has been disabled automatically`);
     throw err;
   }
 }
@@ -442,7 +442,7 @@ function userPrefix(route: PushRoute | null, s: PushSettings, fallback: string):
 }
 
 /* ------------------------------------------------------------------ *
- * 派发：新条目进来时按每个用户的规则分流
+ * Dispatch: route new items by each user's rules as they arrive
  * ------------------------------------------------------------------ */
 
 export async function dispatchUserPush(sourceId: string, fresh: FreshItem[]): Promise<number> {
@@ -493,15 +493,15 @@ async function dispatchForUser(user: ActiveUser, sourceId: string, fresh: FreshI
     }
     if (quiet && s.quietAction === "drop") continue;
     if (canBatchForUser(it, s, d)) {
-      batched.push({ it, reason: d.reason || (route ? `[${route.name}] ` : "") + "达到攒批高分", subHits, route });
+      batched.push({ it, reason: d.reason || (route ? `[${route.name}] ` : "") + "met batch high-score threshold", subHits, route });
       deduper?.markSeen(it);
     }
   }
 
-  // 入队：deliveries 的唯一键天然去重，同一用户同一条只会进一次
+  // Enqueue: the unique key on deliveries dedups naturally, so one user gets one row per item
   for (const b of batched) {
     if (recordDelivery(user.userId, b.it.id, "queued", null, b.reason, b.route?.name ?? null)) {
-      // 只记录，不发送
+      // record only, do not send
     }
   }
 
@@ -518,7 +518,7 @@ async function dispatchForUser(user: ActiveUser, sourceId: string, fresh: FreshI
   let sent = 0;
   for (const { it, reason, subHits, route } of picked) {
     if (!recordDelivery(user.userId, it.id, "queued", null, reason, route?.name ?? null)) continue;
-    const text = [userPrefix(route, s, "⚡ 新动态 · ") + reason, "", ...itemBlock(sourceId, it, s, undefined, subHits)].join("\n");
+    const text = [userPrefix(route, s, "⚡ New · ") + reason, "", ...itemBlock(sourceId, it, s, undefined, subHits)].join("\n");
     try {
       await sendToUser(user, text);
       markSent(user.userId, [it.id]);
@@ -530,12 +530,12 @@ async function dispatchForUser(user: ActiveUser, sourceId: string, fresh: FreshI
       break;
     }
   }
-  if (sent) console.log(`[user-push] 用户 ${user.userId} 即时推送 ${sent} 条（来源 ${sourceLabel(sourceId)}）`);
+  if (sent) console.log(`[user-push] instant push to user ${user.userId}: ${sent} items (source ${sourceLabel(sourceId)})`);
   return sent;
 }
 
 /* ------------------------------------------------------------------ *
- * 攒批冲刷
+ * Batch flush
  * ------------------------------------------------------------------ */
 
 export async function flushUserBatches(force = false, userId?: number): Promise<number> {
@@ -546,7 +546,7 @@ export async function flushUserBatches(force = false, userId?: number): Promise<
     try {
       total += await flushUserLocked(user, force);
     } catch (err) {
-      console.error("[user-push] 冲刷失败:", err instanceof Error ? err.message : err);
+      console.error("[user-push] flush failed:", err instanceof Error ? err.message : err);
     }
   }
   return total;
@@ -622,7 +622,7 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
   const subKeywords = loadUserSubscriptions(user.userId);
   const hasRoutes = s.routes?.some((r) => r.enabled);
 
-  // 二次回查：队列等待期间被关闭 / 加了屏蔽词 / AI 改判的，一律不发
+  // Second lookup: anything closed, blocklisted or re-judged by the AI while it waited in the queue is never sent
   const picked: { row: (typeof dbRows)[number]; item: FreshItem; subHits: string[]; route: PushRoute | null; reason: string }[] = [];
   for (const q of rows) {
     const r = byId.get(q.item_id);
@@ -657,22 +657,22 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
     const subHits = matchUserSubscriptions(item, subKeywords);
     const route = hasRoutes ? matchRoute({ ...item, sourceId: r.source_id }, s.routes) : null;
     if (hasRoutes && !route) continue;
-    picked.push({ row: r, item, subHits, route, reason: q.reason ?? "攒批汇总" });
+    picked.push({ row: r, item, subHits, route, reason: q.reason ?? "batch summary" });
   }
   const pickedIds = new Set(picked.map((p) => p.item.id));
   for (const q of rows) {
     if (!pickedIds.has(q.item_id)) run("UPDATE user_push_deliveries SET status = 'failed' WHERE id = ?", q.id);
   }
   if (!picked.length) {
-    // 全被过滤掉：标记为 failed，避免永远卡在队列里
+    // Everything was filtered out: mark it as failed so it cannot stay stuck in the queue forever
     for (const q of rows) {
       run("UPDATE user_push_deliveries SET status = 'failed' WHERE id = ?", q.id);
     }
     return 0;
   }
 
-  const header = picked[0]!.route?.header ?? s.customHeader ?? "📦 资源雷达 · 攒批汇总";
-  const lines: string[] = [`${header}（${picked.length} 条）`];
+  const header = picked[0]!.route?.header ?? s.customHeader ?? "📦 Resource Radar · Batch summary";
+  const lines: string[] = [`${header} (${picked.length} items)`];
   picked.forEach((p, i) => {
     lines.push("");
     lines.push(...itemBlock(p.row.source_id, p.item, s, i + 1, p.subHits));
@@ -684,7 +684,7 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
     markSent(user.userId, picked.map((p) => p.item.id));
     logUserPush(user.userId, "batch", picked.map((p) => p.item.id), text, true, null, null);
     run("UPDATE user_push_configs SET last_flush_at = ? WHERE user_id = ?", new Date().toISOString(), user.userId);
-    console.log(`[user-push] 用户 ${user.userId} 攒批推送 ${picked.length} 条`);
+    console.log(`[user-push] batch push to user ${user.userId}: ${picked.length} items`);
     return picked.length;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -694,7 +694,7 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
 }
 
 /* ------------------------------------------------------------------ *
- * 个人日报
+ * Personal daily digest
  * ------------------------------------------------------------------ */
 
 export async function pushUserDaily(): Promise<number> {
@@ -717,7 +717,7 @@ export async function pushUserDaily(): Promise<number> {
       const n = await withDeliveryLock(user.userId, () => sendDailyDigest(user));
       sent += n;
     } catch (err) {
-      console.error("[user-push] 个人日报失败:", err instanceof Error ? err.message : err);
+      console.error("[user-push] personal daily digest failed:", err instanceof Error ? err.message : err);
     }
   }
   return sent;
@@ -790,7 +790,7 @@ async function sendDailyDigest(user: ActiveUser): Promise<number> {
     if (items.length >= Math.min(12, budget)) break;
   }
   if (!items.length) return 0;
-  const lines = [`📰 资源雷达 · 个人日报（${new Date().toISOString().slice(0, 10)}，${items.length} 条）`];
+  const lines = [`📰 Resource Radar · Personal digest (${new Date().toISOString().slice(0, 10)}, ${items.length} items)`];
   items.forEach((p, i) => {
     lines.push("");
     lines.push(...itemBlock(p.row.source_id, p.item, s, i + 1, p.subHits));
@@ -807,7 +807,7 @@ async function sendDailyDigest(user: ActiveUser): Promise<number> {
 }
 
 /* ------------------------------------------------------------------ *
- * 调度与查询
+ * Scheduling and queries
  * ------------------------------------------------------------------ */
 
 let userFlushTimer: NodeJS.Timeout | null = null;
@@ -820,7 +820,7 @@ export function startUserPushScheduler(): void {
 
 function scheduleUserFlush(): void {
   if (userFlushTimer) return;
-  // 个人攒批周期各不相同，统一用 1 分钟粒度轮询，按各自 batchIntervalMin 判断是否该发
+  // Per-user batch intervals differ, so poll on a 1-minute tick and decide per user by their own batchIntervalMin
   userFlushTimer = setInterval(() => {
     void tickUserFlush();
   }, 60_000);
@@ -831,13 +831,13 @@ let lastUserFlushAt = 0;
 
 async function tickUserFlush(): Promise<void> {
   if (!userSchedulerStarted) return;
-  // 至少隔 5 分钟才真正跑一轮，避免 1 分钟粒度把出口打满
+  // Only really run a round every 5 minutes at the very least, so the 1-minute tick does not saturate the egress
   if (Date.now() - lastUserFlushAt < 5 * 60_000) return;
   lastUserFlushAt = Date.now();
   try {
     await flushUserBatches(false);
   } catch (err) {
-    console.error("[user-push] 定时冲刷失败:", err instanceof Error ? err.message : err);
+    console.error("[user-push] scheduled flush failed:", err instanceof Error ? err.message : err);
   }
 }
 
@@ -848,7 +848,7 @@ export function userPushStats(userId: number): {
   totalSent: number;
   failures: number;
   lastError: string | null;
-  // 与全局 /api/push 的 stats 字段对齐，让同一套推送面板能直接复用
+  // Aligned with the global /api/push stats fields, so the same push panel can be reused as is
   pushedLastHour: number;
   pushedLast24h: number;
   totalPushed: number;
@@ -902,7 +902,7 @@ export function userPushLogs(userId: number, limit = 30): Array<{
   );
 }
 
-/** 试算：用个人规则扫最近 180 条，返回会被推/被拦的原因分布 */
+/** Dry run: scan the most recent 180 items with the personal rules and return the distribution of push/block reasons */
 export function previewUserPush(userId: number, limit = 6): {
   instant: string[];
   batch: string[];
@@ -1005,7 +1005,7 @@ export function previewUserPush(userId: number, limit = 6): {
     const route = hasRoutes ? matchRoute({ ...item, sourceId: r.source_id }, s.routes) : null;
     if (hasRoutes && !route) { rejectedBy.route = (rejectedBy.route ?? 0) + 1; continue; }
     const d = decideForUser(item, s, subHits, route);
-    const line = `[${sourceLabel(r.source_id)}] ${r.title.slice(0, 60)} · ${Math.round(r.score)} 分`;
+    const line = `[${sourceLabel(r.source_id)}] ${r.title.slice(0, 60)} · ${Math.round(r.score)} pts`;
     if (d.push) instant.push(line);
     else if (canBatchForUser(item, s, d)) batch.push(line);
   }
@@ -1033,7 +1033,7 @@ export function previewUserPush(userId: number, limit = 6): {
 
 function checkReason(item: FreshItem & { sourceId: string }, s: PushSettings): string | null {
   if (!passesPushFilters(item, s)) {
-    // 复用全局判定后做一次「为什么」的粗分类，够前端展示即可
+    // Reuse the global decision and then bucket it roughly into "why"; that is enough for the frontend
     if (!s.enabled) return "disabled";
     return "filtered";
   }
@@ -1043,23 +1043,23 @@ function checkReason(item: FreshItem & { sourceId: string }, s: PushSettings): s
 export type { DetectedChat };
 export { detectTelegramChatIds };
 
-/** 给某个用户发一条任意文本（测试消息用），凭据缺失时抛错 */
+/** Send one arbitrary text to a user (used by test messages); throws when credentials are missing */
 export async function sendTelegramToUser(userId: number, text: string): Promise<void> {
   const settings = getUserPushConfig(userId).settings;
   if (settings.deliverVia === "webhook") {
-    if (!settings.webhookUrl) throw new Error("请先保存 webhook 地址");
+    if (!settings.webhookUrl) throw new Error("save the webhook URL first");
     await postWebhook(settings, text);
     return;
   }
   const token = resolveUserBotToken(userId);
   const chatId = get<{ chat_id: string }>("SELECT chat_id FROM user_push_configs WHERE user_id = ?", userId)?.chat_id ?? "";
-  if (!token || !chatId) throw new Error("请先保存 Bot Token 与 Chat ID");
+  if (!token || !chatId) throw new Error("save the Bot Token and Chat ID first");
   await sendTelegramWith({ botToken: token, chatId }, text);
 }
 
 /**
- * AI 后台补审通过后调用：按 id 把条目捞出来，再走一遍个人派发。
- * 与全局 pushReviewedByIds 互补 —— 全局没配 Bot 时它直接返回 0，个人推送不能跟着哑掉。
+ * Called after the background AI review passes: load the items by id and run personal dispatch again.
+ * Complements the global pushReviewedByIds: that one returns 0 when no global Bot is configured, and personal push must not go silent with it.
  */
 export async function dispatchUserPushByIds(sourceId: string, itemIds: readonly number[]): Promise<number> {
   if (!itemIds.length) return 0;

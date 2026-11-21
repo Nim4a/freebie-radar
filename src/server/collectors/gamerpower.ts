@@ -18,7 +18,7 @@ type Giveaway = {
   image?: string;
 };
 
-/** GamerPower 聚合 Epic / Steam / GOG / Prime / itch.io / IndieGala 等平台的限时免费。 */
+/** GamerPower aggregates limited-time freebies from Epic / Steam / GOG / Prime / itch.io / IndieGala and other platforms. */
 export const gamerpowerCollector: Collector = {
   kind: "gamerpower",
   label: "GamerPower 免费游戏聚合",

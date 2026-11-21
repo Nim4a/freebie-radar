@@ -1,12 +1,12 @@
 /**
- * 跨源去重指纹与聚类器：
- * 1. 对含《》的标题（游戏/软件/书名），同时抽取中文名与英文名，避免
- *    "《斗阵骑士 Knightica》"（产出 knightica）与 "《斗阵骑士》"（产出 斗阵骑士）互相失配。
- * 2. 对纯英文标题，剔除 [平台] 标签与停用词，保留专有名词。
- * 3. 对无《》的中文/中英混排标题，保留中文主体词而非丢光中文只剩 "coding plan" / "windows"，
- *    避免不同商家的相同品类福利被误合并。
- * 4. 在筛选/推送/精选时用 Union-Find 做连通分量聚类，只要存在双语桥接条目，
- *    同组所有中英文来源报道都会收敛到同一聚类。
+ * Cross-source dedup fingerprinting and clusterer:
+ * 1. For titles containing 《》 (games / software / book titles), extract both the Chinese and the English name, so
+ * "《斗阵骑士 Knightica》" (yields knightica) and "《斗阵骑士》" (yields 斗阵骑士) do not mismatch each other.
+ * 2. For pure-English titles, strip [platform] tags and stopwords, keep proper nouns.
+ * 3. For Chinese / mixed titles without 《》, keep the Chinese head term instead of dropping all Chinese and leaving only "coding plan" / "windows",
+ * so that the same category of freebies from different vendors is not wrongly merged.
+ * 4. When filtering / pushing / curating, use Union-Find connected-component clustering: as long as a bilingual bridging entry exists,
+ * all Chinese and English reports of the same group converge into the same cluster.
  */
 
 const MERGE_STOP = new Set([
@@ -22,7 +22,7 @@ const MERGE_STOP = new Set([
   "reddit", "thread", "threads", "comment", "comments", "view", "join", "share", "shar",
   "alert", "weekend", "f2p", "event", "ends", "through", "pm", "am", "et", "pt", "utc",
   "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
-  // 通用产品/技术词：不能单独作为去重键
+  // Generic product / tech words: cannot serve as a dedup key on their own
   "ai", "app", "apps", "ip", "api", "web", "www", "http", "https", "com", "net", "org",
   "pro", "max", "plus", "lite", "beta", "alpha", "test", "demo", "trial", "vip",
   "ceo", "cto", "team", "news", "info", "blog", "post", "code", "dev", "devs",
@@ -30,7 +30,7 @@ const MERGE_STOP = new Set([
   "usd", "eur", "gbp", "cny", "rmb", "per", "month", "months", "year", "years", "day", "days", "hour", "hours",
 ]);
 
-/** 《》里出现这些词时说明是标签/前缀（如《AFF》），不是商品名。 */
+/** When these words appear inside 《》, they mark a tag / prefix (e.g. 《AFF》), not a product name. */
 const BOOK_NOISE = new Set([
   "aff", "noaff", "无aff", "福利", "羊毛", "限免", "限时免费", "免费", "免费领", "免费领取",
   "喜加一", "白嫖", "活动", "教程", "攻略", "推荐", "公告", "置顶", "转载", "首发", "原创",
@@ -140,7 +140,7 @@ function cleanEnglishForMerge(raw: string): string {
     .replace(/\*\*|__|\\?->|→/g, " -> ")
     .replace(EMOJI_RE, " ");
 
-  // 处理多方括号写法：[Multi] [Knightica] [CA$16.99 → Free] [Recruit...]
+  // Handle multi-bracket forms: [Multi] [Knightica] [CA$16.99 -> Free] [Recruit...]
   if (/^(?:\[[^\]]+\]\s*){2,}/.test(s)) {
     const segs = [...s.matchAll(/\[([^\]]+)\]/g)].map((m) => m[1]!.trim());
     for (const seg of segs) {
@@ -154,7 +154,7 @@ function cleanEnglishForMerge(raw: string): string {
 
   s = s.replace(BRACKET_TAG_RE, " ").trim();
 
-  // 在「is free / free via / — / . / ->」等说明分隔处切出主体产品名
+  // Cut the main product name out at explanation separators such as "is free / free via / - / . / ->"
   const cutRe =
     /(?:\s+(?:is|are)\s+(?:now\s+)?(?:completely\s+)?free\b|\s+will\s+be\s+free\b|\s+free\s+(?:to\s+keep|on|via|at|from|for)\b|\s+[—–|]\s+|\.\s+|\s+->\s+|\bview\s+post\s+on\s+reddit\b)/i;
   const hit = cutRe.exec(s);
@@ -169,8 +169,8 @@ function cleanEnglishForMerge(raw: string): string {
   return s;
 }
 /**
- * 从标题提取可用于跨源合并的所有等价指纹：
- * - 单条《斗阵骑士 Knightica》会同时返回 ["knightica", "斗阵骑士"]，从而打通纯英文与纯中文报道。
+ * Extract every equivalent fingerprint usable for cross-source merging:
+ * - A single "《斗阵骑士 Knightica》" returns both ["knightica", "斗阵骑士"], bridging pure-English and pure-Chinese coverage.
  */
 export function extractMergeKeys(title: string): string[] {
   const keys: string[] = [];
@@ -178,7 +178,7 @@ export function extractMergeKeys(title: string): string[] {
     if (isValidKey(k) && !keys.includes(k)) keys.push(k);
   };
 
-  // 1. 优先识别《...》内的标准作品名（跳过《AFF》等标签）
+  // 1. Prefer the canonical work name inside 《...》 (skip tags like 《AFF》)
   const bookMatches = findBookMatches(title);
 
   if (bookMatches.length === 1) {
@@ -186,7 +186,7 @@ export function extractMergeKeys(title: string): string[] {
     const latin = extractLatinKey(only.inner);
     const cjk = extractCjkFromBook(only.inner);
     push(latin);
-    // 紧跟在《中文名》后面的括号英文别名，如《斗阵骑士》（Knightica）
+    // Parenthesised English alias right after the 《Chinese name》, e.g. 《斗阵骑士》 (Knightica)
     const tail = title.slice(only.endIndex);
     const adj = /^\s*[（(]([^)）]{2,40})[)）]/.exec(tail);
     if (adj) push(extractLatinKey(adj[1]!));
@@ -200,7 +200,7 @@ export function extractMergeKeys(title: string): string[] {
     if (keys.length) return keys;
   }
 
-  // 2. 无有效《》：先去掉 URL / 短链 / #标签 再判断主体语言
+  // 2. No valid 《》: strip URL / short link / #tag first, then decide the language of the subject
   const englishCleaned = cleanEnglishForMerge(title);
   const stripped = title
     .replace(/https?:\/\/\S+/gi, " ")
@@ -216,7 +216,7 @@ export function extractMergeKeys(title: string): string[] {
     return keys;
   }
 
-  // 3. 中文为主但没有《》：保留中文主体，避免只抽出 "coding plan" / "windows" 误伤不同厂商
+  // 3. Chinese-dominant but no 《》: keep the Chinese head term, so that only "coding plan" / "windows" is not extracted and different vendors are not confused
   const cn = normalizeCnTitle(title, true) || normalizeCnTitle(title, false);
   if (cn && utf8ByteLength(cn) >= (/[a-z0-9]/i.test(cn) && !HAS_CJK_RE.test(cn) ? 4 : 6)) {
     push(cn);
@@ -224,12 +224,12 @@ export function extractMergeKeys(title: string): string[] {
   return keys;
 }
 
-/** 单字符串指纹（写入 items.title_key）。 */
+/** Single-string fingerprint (written to items.title_key). */
 export function mergeKey(title: string): string {
   return extractMergeKeys(title)[0] ?? "";
 }
 
-/** 用于无《》中文标题近重复比对的 token 集（ASCII 词 + 中文二元组）。 */
+/** Token set for near-duplicate comparison of Chinese titles without 《》 (ASCII words + Chinese bigrams). */
 function fuzzyTokens(title: string): Set<string> | null {
   const norm = normalizeCnTitle(title, true);
   if (!norm || norm.length < 4) return null;
@@ -308,7 +308,7 @@ function extractTopicProfile(title: string): TopicProfile | null {
   const brands = new Set<string>();
   const specifics = new Set<string>();
 
-  // 1. 先抓取带连字符/版本号/型号的复合英文实体（如 CAR-T / CE-25A / Gemini-4 / GPT-5）
+  // 1. First capture composite English entities with hyphens / version numbers / model numbers (e.g. CAR-T / CE-25A / Gemini-4 / GPT-5)
   for (const m of cleaned.matchAll(/\b[A-Za-z][A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)+\b/g)) {
     const tok = m[0]!.toLowerCase();
     if (tok.length < 3 || GENERIC_ENTITIES.has(tok) || TOPIC_STOP.has(tok)) continue;
@@ -317,7 +317,7 @@ function extractTopicProfile(title: string): TopicProfile | null {
     if (EXCLUSIVE_BRANDS.has(tok)) brands.add(tok);
   }
 
-  // 1b. 先抓取中英混排短实体（如 B站 / Q币 / A股 / U盘 / 7天 / 1个月），防止分词器拆成单字丢弃
+  // 1b. First capture short mixed Chinese-English entities (e.g. B站 / Q币 / A股 / U盘 / 7天 / 1个月), so the tokenizer does not split them into single dropped characters
   for (const m of cleaned.matchAll(/[A-Za-z]{1,4}[\u4e00-\u9fff]{1,3}/g)) {
     const tok = m[0]!.toLowerCase();
     if (TOPIC_STOP.has(tok)) continue;
@@ -326,7 +326,7 @@ function extractTopicProfile(title: string): TopicProfile | null {
     else specifics.add(tok);
   }
 
-  // 2. 用内置分词器做中英文切词，并把相邻的非虚词单字（如「医」+「保」→「医保」）拼回双字词
+  // 2. Tokenise Chinese and English with the built-in tokenizer, and re-join adjacent non-stopword single characters (e.g. 「医」+「保」->「医保」) into two-character words
   const CJK_SINGLE_STOP = new Set(["的", "了", "和", "与", "或", "在", "是", "有", "用", "进", "把", "被", "将", "让", "从", "对", "于", "向", "至", "个", "种", "款", "首", "元", "万", "亿", "年", "月", "日", "几", "办", "更", "新", "大", "小", "多", "少", "中", "国"]);
   let prevSingleCjk = "";
   for (const part of TOPIC_SEGMENTER.segment(cleaned)) {
@@ -365,7 +365,7 @@ function extractTopicProfile(title: string): TopicProfile | null {
     }
   }
 
-  // 3. 兜底匹配复合品牌名（如「阿里云」「华为云」「天翼云」「中国银行」可能被分词切开）
+  // 3. Fallback matching for composite brand names (e.g. 「阿里云」「华为云」「天翼云」「中国银行」 may be split by the tokenizer)
   const lower = cleaned.toLowerCase();
   for (const b of EXCLUSIVE_BRANDS) {
     if (HAS_CJK_RE.test(b) && lower.includes(b)) {
@@ -374,7 +374,7 @@ function extractTopicProfile(title: string): TopicProfile | null {
     }
   }
 
-  // 有明确品牌锚点（如「b站 + 大会员」）时允许 2 词轮廓，纯通用词仍要求 >= 3 词
+  // With a clear brand anchor (e.g. 「b站 + 大会员」) a 2-word outline is allowed; purely generic words still require >= 3 words
   const minTokens = brands.size > 0 ? 2 : 3;
   return tokens.size >= minTokens ? { tokens, brands, specifics } : null;
 }
@@ -386,7 +386,7 @@ function hasBrandConflict(a: Set<string>, b: Set<string>): boolean {
     if (b.has(brand)) shared += 1;
   }
   if (shared === 0) return true;
-  // 若任一方额外带了合作/联名/发卡商户品牌（如「雷鸟+B站」vs 纯「B站」，或「中国银行+B站」vs 纯「B站」），视为不同活动
+  // If either side additionally carries a co-brand / joint-brand / issuing-merchant brand (e.g. 「雷鸟+B站」 vs plain 「B站」, or 「中国银行+B站」 vs plain 「B站」), treat them as different campaigns
   if (a.size !== b.size) return true;
   return shared !== a.size;
 }
@@ -401,13 +401,13 @@ export type DedupeEntry = {
 };
 
 /**
- * 跨源去重连通器：
- * 在 seed（历史已推/队列中）与 candidates（本轮候选）之间构建等价类，
- * 支持：
- * - 多指纹桥接（如 "Knightica" <-> "《斗阵骑士 Knightica》" <-> "《斗阵骑士》"）
- * - urlKey 相同
- * - 无《》中文标题高相似度（Jaccard >= 0.75）
- * - 同事件/话题实体聚类（如多篇不同措辞的 CAR-T 进医保报道，且受品牌冲突保护）
+ * Cross-source dedup connector:
+ * Build equivalence classes between seed (already pushed / queued) and candidates (this round's candidates),
+ * supporting:
+ * Multi-fingerprint bridging (e.g. "Knightica" <-> "《斗阵骑士 Knightica》" <-> "《斗阵骑士》")
+ * identical urlKey
+ * high similarity for Chinese titles without 《》 (Jaccard >= 0.75)
+ * same-event / same-topic entity clustering (e.g. multiple differently worded reports about CAR-T entering medical insurance, protected by the brand-conflict rule)
  */
 export class TitleDeduper<T extends DedupeEntry> {
   private parent: number[];
@@ -465,7 +465,7 @@ export class TitleDeduper<T extends DedupeEntry> {
         }
       }
 
-      // 仅对含中文且无有效《》的标题补充中文二元组近重复 + 同事件话题聚类检查
+      // For titles that contain Chinese and have no valid 《》, additionally run Chinese-bigram near-duplicate + same-event topic clustering
       if (HAS_CJK_RE.test(item.title) && !hasBookTitle(item.title)) {
         const toks = fuzzyTokens(item.title);
         if (toks) {
@@ -490,7 +490,7 @@ export class TitleDeduper<T extends DedupeEntry> {
           }
         }
 
-        // 二手转让/拼车车位属于独立个人挂单，不做泛话题聚合
+        // Second-hand transfers / carpool seats are standalone personal listings, not generic topic aggregation
         const skipTopic = item.category === "trade" || item.category === "carpool";
         if (!skipTopic) {
           const prof = extractTopicProfile(item.title);
@@ -507,7 +507,7 @@ export class TitleDeduper<T extends DedupeEntry> {
               }
             }
 const topicCapMs = maxGapMs ? Math.min(maxGapMs, 72 * 3_600_000) : 72 * 3_600_000;
-            // 只跟共享词最多的前 24 条比：全量两两比较在 500+ 条候选时会把单次请求拖到秒级。
+            // Only compare against the top 24 entries with the most shared words: comparing everything pairwise drags a single request to seconds at 500+ candidates.
             const peers = [...peerShared.entries()]
               .filter(([, shared]) => shared >= 2)
               .sort((a, b) => b[1] - a[1])

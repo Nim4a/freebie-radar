@@ -4,7 +4,7 @@ type RepoSpec = { repo: string; path?: string; limit?: number };
 
 type Parsed = { title: string; url: string; description: string; section: string };
 
-/** free-for-dev 这类清单按二级标题分节，节名就是天然的分类提示。 */
+/** lists like free-for-dev are split into sections by second-level headings, and the section name is a natural category hint. */
 const SECTION_RULES: [RegExp, string][] = [
   [/generative ai|apis, data, and ml|ai|llm|chatbot|image|video|audio|writing|agent/i, "ai"],
   [/domain|dns|web hosting/i, "domain"],

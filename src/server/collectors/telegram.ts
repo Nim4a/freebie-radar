@@ -7,24 +7,24 @@ function stripTags(html: string): string {
 }
 
 /**
- * 网盘资源频道常见两种脏标题：
- *   1. 「《漂流瓶》 分类: #教程 #资料 #图书 1. xxx 2. xxx」—— 频道栏目名 + 标签 + 编号列表
- *   2. 「名称：欲望的陷阱 [内封简繁英字幕]」—— 字段名当标题
- * 只清理这两种前缀，普通频道（tg-cn-deals / tg-freegames）的标题不受影响。
+ * Netdisk channels have two common kinds of dirty title:
+ *   1. 「《漂流瓶》 分类: #教程 #资料 #图书 1. xxx 2. xxx」-- channel column name + tags + numbered list
+ *   2. 「名称:欲望的陷阱 [内封简繁英字幕]」-- a field name used as the title
+ * Only these two prefixes are cleaned; ordinary channels (tg-cn-deals / tg-freegames) are unaffected.
  */
 function cleanTgTitle(raw: string): string {
   const cleaned = raw
     .replace(/^《[^》]{1,24}》\s*分类[:：]\s*(?:#[^\s#]+\s*)+/u, "")
     .replace(/^名称[:：]\s*/u, "");
-  // 「名称：白蛇传 描述：2006年版...」两个字段挤在同一行时，标题只留名称部分；
-  // 拆分后的条目还带着「1. 」「2、」编号，一并去掉
+  // when two fields like「名称:白蛇传 描述:2006年版...」are crammed onto one line, the title keeps only the name part;
+  // the split entries also carry「1. 」「2、」numbering, which is stripped as well
   return cleaned.split(/\s*描述[:：]/u)[0]!.replace(/^\d{1,2}[.、]\s*/u, "").trim();
 }
 
 /**
- * 把「1. A 2. B 3. C」这种一条消息塞多个资源的帖子拆成多条。
- * 只在源配置 splitNumbered=true 时启用：@YioveComplex 每条消息列 4-6 个资源，
- * 不拆的话标题只能显示第一个，其余全丢。
+ * Split a post such as「1. A 2. B 3. C」that packs several resources into one message into separate items.
+ * Only enabled when the source config has splitNumbered=true: every @YioveComplex message lists 4-6 resources,
+ * and without splitting only the first one shows in the title while the rest are lost.
  */
 function splitNumberedEntries(text: string): string[] {
   const parts = text
@@ -79,8 +79,8 @@ export const telegramCollector: Collector = {
     for (const channel of channels) {
       const url = "https://t.me/s/" + channel;
       try {
-        // t.me 的公开预览页直连即可；只有直连解析不到时才降级到 FlareSolverr。
-        // 之前无条件走 FlareSolverr，拿回的是人机校验页，解析永远是 0 条。
+        // t.me public preview pages work with a direct request; only fall back to FlareSolverr when that fails to parse.
+        // it used to go through FlareSolverr unconditionally, which returned a captcha page and always parsed 0 entries.
         let body = "";
         const direct = await ctx.http.text(url).catch(() => null);
         if (direct && direct.status === 200) body = direct.body;
@@ -101,13 +101,13 @@ export const telegramCollector: Collector = {
           const body = m.text.replace(/^《[^》]{1,24}》\s*分类[:：]\s*(?:#[^\s#]+\s*)+/u, "");
           const chunks = splitNumbered ? splitNumberedEntries(body) : [];
           if (chunks.length > 1) {
-            // 一条消息含多个资源：拆成多条，externalId 加序号后缀避免主键冲突
+            // one message holds several resources: split it up and add a sequence suffix to externalId to avoid primary-key conflicts
             chunks.forEach((chunk, idx) => {
               const title = cleanTgTitle(chunk).slice(0, 180);
               if (!title) return;
               items.push({
                 externalId: channel + "/" + m.postId + "-" + idx,
-                // url_key 有 UNIQUE 约束，同一消息拆出的多条必须带不同 query，否则只有第一条能入库
+                // url_key has a UNIQUE constraint, so items split from one message must carry different query strings or only the first one is stored
                 url: url + "/" + m.postId + "?part=" + idx,
                 title,
                 summary: chunk.slice(0, 400),

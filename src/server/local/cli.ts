@@ -29,15 +29,15 @@ async function main() {
     const spec = SITES[site];
     try {
       const items = await fetchSite(site, keyword);
-      console.log("[local] " + site + " 抓到 " + items.length + " 条");
+      console.log("[local] " + site + " fetched " + items.length + " items");
       items.slice(0, 3).forEach((i) => console.log("   - " + i.title.slice(0, 60) + "  " + i.url.slice(0, 60)));
       if (!items.length) continue;
       if (dryRun) continue;
-      if (!token) throw new Error("缺少 INGEST_TOKEN");
+      if (!token) throw new Error("missing INGEST_TOKEN");
       const out = await push(spec.sourceId, items);
-      console.log("[local] " + site + " 回传: " + out);
+      console.log("[local] " + site + " uploaded: " + out);
     } catch (err) {
-      console.error("[local] " + site + " 失败: " + (err instanceof Error ? err.message : String(err)));
+      console.error("[local] " + site + " failed: " + (err instanceof Error ? err.message : String(err)));
       process.exitCode = 1;
     }
   }

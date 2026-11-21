@@ -28,7 +28,7 @@ export {
   DEFAULT_PROMPT,
 };
 
-/** 采集器调用：是否该送审（读数据库里的开关，改配置立即生效）。 */
+/** Collector-side check: whether an item should be submitted for review (reads the DB switch, so config changes take effect immediately). */
 export function shouldReview(): boolean {
   return aiReady();
 }

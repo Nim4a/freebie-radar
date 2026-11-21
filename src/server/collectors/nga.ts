@@ -3,26 +3,26 @@ import { cleanText } from "../enrich/normalize.ts";
 import type { Collector, RawItem } from "./types.ts";
 
 /**
- * NGA 玩家社区（bbs.nga.cn）版块采集。
+ * NGA player community (bbs.nga.cn) board collector.
  *
- * 实测（2026-11-15，本机国内家宽）：
- * - 所有镜像域名（bbs.nga.cn / nga.178.com / ngabbs.com / g.nga.cn）对访客一律
- *   403「15:访客不能直接访问」，guestJs 时间戳 cookie 也无效；
- * - 登录态只需两个 Cookie：ngaPassportUid + ngaPassportCid（第三方客户端同款做法）。
+ * Measured 2026-11-15, home broadband in mainland China:
+ * - every mirror domain (bbs.nga.cn / nga.178.com / ngabbs.com / g.nga.cn) returns
+ *   403「15:访客不能直接访问」 to guests, and a guestJs timestamp cookie does not help either;
+ * - a logged-in session needs only two cookies: ngaPassportUid + ngaPassportCid (the same approach third-party clients use).
  *
- * 因此本采集器走「HTTP + 托管 Cookie」，不需要无头浏览器：
- * 1. 主通道 `thread.php?fid=<fid>`（GBK HTML）用正则取帖子列表；
- * 2. 备通道 `thread.php?fid=<fid>&__output=11`（UTF-8 JSON）解析 data.__T。
+ * So this collector uses "HTTP + hosted cookie" and needs no headless browser:
+ * 1. primary channel `thread.php?fid=<fid>` (GBK HTML), extracting the post list with a regex;
+ * 2. fallback channel `thread.php?fid=<fid>&__output=11` (UTF-8 JSON), parsing data.__T.
  */
 
 type NgaConfig = {
-  /** 版块 fid，例如 570 = 优惠信息购物指南 */
+  /** board fid, e.g. 570 = deals and shopping guide */
   fid: number;
-  /** 版块名，仅用于日志与标签 */
+  /** board name, used only for logs and tags */
   forumName?: string;
-  /** 翻页数，默认 1 */
+  /** number of pages, default 1 */
   pages?: number;
-  /** 分类提示，例如 carpool / trade；写入 RawItem.categoryHint */
+  /** category hint, e.g. carpool / trade; written to RawItem.categoryHint */
   categoryHint?: string;
 };
 
@@ -43,12 +43,12 @@ function baseUrl(fid: number, page: number): string {
 }
 
 /**
- * 从列表页 HTML 里抽帖子。
+ * Extract posts from the list-page HTML.
  *
- * 实测（2026-11-15，带 ngaPassportUid/Cid）列表页结构：
- * - 属性全用**单引号**：`<a href='/read.php?tid=12754195' id='t_12754195' class='topic'>标题</a>`
- * - 版规/置顶帖在 `<div id='toptopics'>` 里，锚点**没有** `class='topic'`，靠这条就能滤掉；
- * - 真实帖子一律带 `class='topic'`（还有 row1/row2 的行容器类，那些不是锚点）。
+ * Measured 2026-11-15 with ngaPassportUid/Cid, the list page structure is:
+ * - attributes are all in **single quotes**: `<a href='/read.php?tid=12754195' id='t_12754195' class='topic'>title</a>`
+ * - board rules and pinned posts live in `<div id='toptopics'>` and their anchors have **no** `class='topic'`, which alone filters them out;
+ * - real posts always carry `class='topic'` (the row1/row2 row containers are not anchors).
  */
 function parseHtml(html: string): RawItem[] {
   const out: RawItem[] = [];
@@ -78,7 +78,7 @@ function parseHtml(html: string): RawItem[] {
   return out;
 }
 
-/** 备通道：__output=11 的 JSON。NGA 用「紧凑对象」表示帖子，字段索引随版本变化，这里做结构探测。 */
+/** fallback channel: the __output=11 JSON. NGA represents posts as "compact objects" whose field indices change between versions, so this does structural probing. */
 function parseJson(body: string): RawItem[] {
   let data: unknown;
   try {
@@ -207,5 +207,5 @@ export const ngaCollector: Collector = {
   },
 };
 
-/** 供测试与排错使用 */
+/** exposed for tests and troubleshooting */
 export const __ngaInternals = { parseHtml, parseJson, baseUrl };

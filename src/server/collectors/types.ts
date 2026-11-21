@@ -9,13 +9,13 @@ export type RawItem = {
   publishedAt?: string | null;
   expiresAt?: string | null;
   tags?: string[];
-  /** 来源自带的结构化分类提示（例如 GitHub 清单的分节名） */
+  /** structured category hint supplied by the source (e.g. a GitHub list's section name) */
   categoryHint?: string | null;
   /** Per-feed content-kind fallback; cannot bypass source-level fixed classification. */
   kindHint?: string | null;
-  /** 正文全文（可选，用于抽取兑换码与留档，避免原帖被删后信息丢失） */
+  /** full body text (optional, used to extract redemption codes and to keep a record in case the original post is deleted) */
   content?: string | null;
-  /** 封面/缩略图 URL（可选，仅限合法 http(s) 地址） */
+  /** cover / thumbnail URL (optional; legal http(s) addresses only) */
   imageUrl?: string | null;
   raw?: unknown;
 };
@@ -25,7 +25,7 @@ export type SourceSeed = {
   name: string;
   kind: string;
   enabled?: boolean;
-  /** 采集间隔（秒）。越小越及时；送码类源建议 60-120 秒 */
+  /** collection interval in seconds. Smaller is more timely; code-giveaway sources suggest 60-120 seconds */
   intervalSec?: number;
   config?: Record<string, unknown>;
 };
@@ -41,9 +41,9 @@ export type CollectContext = {
 
 export type CollectResult = {
   items: RawItem[];
-  /** 下一次采集的起点（翻页 token / 最后一条 id） */
+  /** start of the next collection (page token / last item id) */
   cursor?: string | null;
-  /** 部分成功时写明降级原因，例如某板块 403 */
+  /** on partial success, the reason for the degradation, e.g. one board returned 403 */
   degraded?: string | null;
 };
 

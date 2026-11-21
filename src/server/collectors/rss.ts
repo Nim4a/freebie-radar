@@ -10,19 +10,19 @@ type FeedSpec = {
   kindHint?: string;
   limit?: number;
   via?: "direct" | "flaresolverr";
-  /** 仅保留命中指定 RSS <category> 的条目（如 NodeSeek 的 info / promotion） */
+  /** keep only entries matching the given RSS <category> (e.g. NodeSeek's info / promotion) */
   includeCategories?: string[];
-  /** 排除命中指定 RSS <category> 的条目 */
+  /** drop entries matching the given RSS <category> */
   excludeCategories?: string[];
-  /** 标题必须包含至少一个关键词（大小写不敏感） */
+  /** the title must contain at least one of these keywords (case-insensitive) */
   titleKeywords?: string[];
   excludeTitleKeywords?: string[];
-  /** 针对 itch.io sale RSS：仅保留 100% 免费（discountpercent=100 或 price=$0.00） */
+  /** itch.io sale RSS only: keep 100% free items (discountpercent=100 or price=$0.00) */
   only100Off?: boolean;
 };
 
-// processEntities: false —— Reddit 的 atom feed 里实体太多，默认的展开上限（1000）会直接抛错；
-// 实体在后续 cleanText / decodeEntities 里统一处理。
+// processEntities: false -- Reddit's atom feed has too many entities and the default expansion limit (1000) throws;
+// entities are handled uniformly later in cleanText / decodeEntities.
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
@@ -70,7 +70,7 @@ function mediaUrlOf(v: unknown, base: string): string | null {
       const o = entry as Record<string, unknown>;
       const type = String(o["@_type"] ?? o["@_medium"] ?? "").toLowerCase();
       if (type && !type.includes("image") && type !== "medium") {
-        // enclosure 可能是音频/视频，非图片则跳过
+        // enclosure may be audio/video, so skip anything that is not an image
         if (type.startsWith("audio/") || type.startsWith("video/")) continue;
       }
       const u = sanitizeImageUrl(o["@_url"] ?? o["@_href"], base);
@@ -164,7 +164,7 @@ export const rssCollector: Collector = {
         const titleKws = (feed.titleKeywords ?? []).map((s) => s.toLowerCase()).filter(Boolean);
         const excludedTitles = (feed.excludeTitleKeywords ?? []).map((s) => s.toLowerCase()).filter(Boolean);
 
-        // 先过滤后截断 limit，避免垃圾分类占满配额把真福利挤掉
+        // filter before truncating to limit, so category filling cannot eat the quota and crowd out real freebies
         const scanPool = incCats.length || excCats.size || titleKws.length || excludedTitles.length || feed.only100Off ? parsed.items : parsed.items.slice(0, limit);
         let keptForFeed = 0;
 

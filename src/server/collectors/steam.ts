@@ -3,8 +3,8 @@ import { decodeEntities } from "../enrich/normalize.ts";
 
 function parseRows(html: string): { url: string; title: string; appId: string }[] {
   const out: { url: string; title: string; appId: string }[] = [];
-  // Steam 的 <a> 上挂了很长的 onmouseover / data-* 属性，从 href 到 title 有 1-2KB，
-  // 只给 800 字符会漏掉所有结果。
+  // Steam's <a> tags carry very long onmouseover / data-* attributes, 1-2KB from href to title,
+  // so a window of only 800 characters would miss every result.
   const re = /<a href="(https:\/\/store\.steampowered\.com\/app\/[^"]+)"[\s\S]{0,3000}?<span class="title">([^<]+)<\/span>/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
@@ -16,7 +16,7 @@ function parseRows(html: string): { url: string; title: string; appId: string }[
   return out;
 }
 
-/** Steam 商店搜索的 AJAX 接口：maxprice=free + specials=1 就是「限时免费 / 100% off」。 */
+/** Steam store search AJAX API: maxprice=free + specials=1 means「限时免费 / 100% off」(limited-time free). */
 export const steamCollector: Collector = {
   kind: "steam",
   label: "Steam 限时免费",

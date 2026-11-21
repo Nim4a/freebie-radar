@@ -1,7 +1,7 @@
 /**
- * AI 引擎实时执行遥测（纯内存环形缓冲，不写 SQLite）：
- * - 追踪正在执行的同步审核 / 异步队列 / 历史补审 / 连通性测试任务与最新判定流
- * - 保存最近 25 次执行记录，供 AI 引擎面板实时展示过程与排障
+ * Live AI-engine execution telemetry (pure in-memory ring buffer, never written to SQLite):
+ * tracks in-flight sync reviews / async queue / history backfill / connectivity tests and the latest verdict stream
+ * keeps the most recent 25 runs so the AI engine panel can show progress and aid troubleshooting in real time
  */
 
 export type AiStage = "sync" | "queue" | "backfill" | "test";

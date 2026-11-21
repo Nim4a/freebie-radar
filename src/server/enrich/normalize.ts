@@ -6,7 +6,7 @@ const TRACKING_PARAMS = new Set([
   "appuid", "apptime", "share_from_user_hidden", "xsec_source", "xsec_token",
 ]);
 
-/** 去掉追踪参数、片段、末尾斜杠，统一 host 大小写；保留有意义的 query。 */
+/** Strip tracking params, fragments and trailing slash, unify host case; keep meaningful query params. */
 export function normalizeUrl(input: string, base?: string): string {
   const raw = (input ?? "").trim();
   if (!raw) return "";
@@ -31,7 +31,7 @@ export function normalizeUrl(input: string, base?: string): string {
   return u.toString();
 }
 
-/** 去重键：同一资源在不同参数下应产生同一个 key。 */
+/** Dedup key: the same resource under different params should produce the same key. */
 export function urlKey(input: string, base?: string): string {
   const normalized = normalizeUrl(input, base);
   try {
@@ -53,7 +53,7 @@ export function decodeEntities(s: string): string {
     .replace(/&([a-z]+|#39);/gi, (m, name: string) => ENTITIES[name] ?? m);
 }
 
-/** 粗暴但够用的 HTML → 纯文本。 */
+/** Crude but good-enough HTML -> plain text. */
 export function cleanText(input: string | null | undefined, maxLength = 400): string {
   if (!input) return "";
   const text = decodeEntities(
@@ -81,7 +81,7 @@ export function parseDate(input: string | number | null | undefined): string | n
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-/** 从文本里抽取「截止/有效期」类日期，用于过期降权。 */
+/** Extract "deadline / valid until" style dates from text, used to downweight expired items. */
 export function guessExpiry(text: string): string | null {
   const now = Date.now();
   const m = /(\d{1,2})\s*月\s*(\d{1,2})\s*日/.exec(text);
@@ -98,7 +98,7 @@ export function guessExpiry(text: string): string | null {
 
 const NOISE_IMG_RE = /(?:spacer|pixel|blank|1x1|tracking|beacon|gravatar\.com\/avatar|emoji|twemoji|\/avatars\/|user_avatar|badge|shields\.io|data:image)/i;
 
-/** 校验并清洗封面图 URL：仅留合法 http(s) 地址，过滤追踪像素/头像/徽章等杂图。 */
+/** Validate and clean a cover image URL: keep only valid http(s) addresses, filter out tracking pixels / avatars / badges. */
 export function sanitizeImageUrl(input: unknown, base?: string): string | null {
   if (typeof input !== "string") return null;
   let s = decodeEntities(input).trim();
@@ -115,7 +115,7 @@ export function sanitizeImageUrl(input: unknown, base?: string): string | null {
   }
 }
 
-/** 从 HTML 片段里提取第一张有效内容图片 URL。 */
+/** Extract the first valid content image URL from an HTML fragment. */
 export function extractImageFromHtml(html: string | null | undefined, base?: string): string | null {
   if (!html) return null;
   const re = /<img\b[^>]*\b(?:src|data-src|data-original)\s*=\s*["']([^"']+)["'][^>]*>/gi;

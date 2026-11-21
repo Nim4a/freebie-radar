@@ -1,14 +1,14 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-// 只加载一次；容器里通常直接用真实环境变量
+// Loaded once; containers normally use real environment variables directly
 for (const file of [".env.local", ".env"]) {
   const p = resolve(process.cwd(), file);
   if (existsSync(p)) {
     try {
       process.loadEnvFile(p);
     } catch {
-      /* 忽略损坏的 env 文件 */
+      /* Ignore a corrupt env file */
     }
   }
 }
@@ -34,7 +34,7 @@ export const config = {
   httpsProxy: str("HTTPS_PROXY"),
   fetchTimeoutMs: num("FETCH_TIMEOUT_MS", 20_000),
   minRequestGapMs: num("MIN_REQUEST_GAP_MS", 2_000),
-  /** 源与源之间的间隔，避免 Reddit 一类站点因同 IP 连续请求返回 429 */
+  /** Delay between sources, so sites like Reddit do not return 429 for back-to-back requests from the same IP */
   sourceGapMs: num("SOURCE_GAP_MS", 3_000),
 
   flaresolverrUrl: str("FLARESOLVERR_URL"),
@@ -66,14 +66,14 @@ export const config = {
   aiMaxItems: num("AI_MAX_ITEMS", 60),
 
   ingestToken: str("INGEST_TOKEN"),
-  /** VPS 按需无头 Cookie 执行器地址（仅内网/网桥监听，平时 0 MB 浏览器内存） */
+  /** On-demand headless Cookie runner on the VPS (listens on the private network/bridge only; 0 MB of browser memory when idle) */
   cookieRunnerUrl: str("COOKIE_RUNNER_URL", "http://172.17.0.1:18790"),
-  /** 小红书国内代理出口（如 http://47.110.65.20:8888），供香港/海外 VPS 绕开国际版跳转 */
+  /** Mainland-China egress proxy for Xiaohongshu (e.g. http://47.110.65.20:8888), so a Hong Kong / overseas VPS avoids the international redirect */
   xhsProxyUrl: str("XHS_PROXY_URL"),
   /**
-   * 站点形态：selfhost = 单人自建（全局状态，行为与旧版一致）；
-   * public = 公开站（公共内容只读共享，个人状态按登录用户隔离）；
-   * auto = 配了 LINUXDO_CLIENT_ID 就按 public，否则 selfhost。
+   * Site shape: selfhost = single-operator install (global state, same behavior as the old version);
+   * public = public site (public content is read-only and shared, personal state is isolated per logged-in user);
+   * auto = behaves as public when LINUXDO_CLIENT_ID is set, otherwise selfhost.
    */
   siteMode: str("SITE_MODE", "auto"),
 
@@ -85,30 +85,30 @@ export const config = {
   linuxdoAuthorizeUrl: str("LINUXDO_AUTHORIZE_URL", "https://connect.linux.do/oauth2/authorize"),
   linuxdoTokenUrl: str("LINUXDO_TOKEN_URL", "https://connect.linux.do/oauth2/token"),
   linuxdoUserUrl: str("LINUXDO_USER_URL", "https://connect.linux.do/api/user"),
-  /** OAuth 专用代理：国内网络直连 connect.linux.do 常被污染/阻断，但又不希望全站采集都走代理 */
+  /** OAuth-only proxy: direct connections to connect.linux.do are often poisoned/blocked on mainland networks, and we do not want all collection to go through a proxy */
   linuxdoProxy: str("LINUXDO_PROXY"),
   githubClientId: str("GITHUB_CLIENT_ID"),
   githubClientSecret: str("GITHUB_CLIENT_SECRET"),
   githubRedirectUri: str("GITHUB_REDIRECT_URI"),
-  /** GitHub OAuth 走的代理；留空回退 LINUXDO_PROXY → HTTP(S)_PROXY */
+  /** Proxy used by GitHub OAuth; empty falls back to LINUXDO_PROXY -> HTTP(S)_PROXY */
   githubProxy: str("GITHUB_PROXY"),
   githubAuthorizeUrl: str("GITHUB_AUTHORIZE_URL", "https://github.com/login/oauth/authorize"),
   githubTokenUrl: str("GITHUB_TOKEN_URL", "https://github.com/login/oauth/access_token"),
   githubUserUrl: str("GITHUB_USER_URL", "https://api.github.com/user"),
 
-  /** Session / 临时令牌签名密钥；留空则首次启动随机生成并写入 settings 表 */
+  /** Signing key for sessions / temporary tokens; empty generates a random one on first start and writes it into the settings table */
   sessionSecret: str("SESSION_SECRET"),
-  /** 个人 Bot Token 加密密钥；留空则复用 sessionSecret 或自动生成 */
+  /** Encryption key for personal Bot Tokens; empty reuses sessionSecret or generates one */
   tokenEncryptionKey: str("TOKEN_ENCRYPTION_KEY"),
 
-  /** 本地模拟登录开关：仅在非 production 且显式开启时生效 */
+  /** Local mock-login switch: only takes effect outside production and when explicitly enabled */
   authDevMock: bool("AUTH_DEV_MOCK", false),
 
-  /* ---- 个人推送护栏（防止单用户把出口代理打满） ---- */
+  /* ---- Personal push guardrails (stops one user from saturating the egress proxy) ---- */
   userPushMaxPerHour: num("USER_PUSH_MAX_PER_HOUR", 40),
   userPushMaxPerInstant: num("USER_PUSH_MAX_PER_INSTANT", 5),
 
-  /* ---- 版本检测与一键更新 ---- */
+  /* ---- Version check and one-click update ---- */
   selfUpdateRemote: str("SELF_UPDATE_REMOTE", "origin"),
   selfUpdateBranch: str("SELF_UPDATE_BRANCH", "main"),
   selfUpdateRestartCmd: str("SELF_UPDATE_RESTART_CMD"),
@@ -117,26 +117,26 @@ export const config = {
   appCommit: str("APP_COMMIT"),
   appBuildTime: str("APP_BUILD_TIME"),
   appRepo: str("APP_REPO", "ZiChuanLan/freebie-radar"),
-  /** 管理端密码；留空则 selfhost 下管理接口开放、public 下管理区锁定（安全兜底） */
+  /** Admin password; when empty the admin API is open in selfhost and locked down in public (safety fallback) */
   adminToken: str("ADMIN_TOKEN"),
-  /** 留空兼容单域名部署；设置后管理 API 只在这些 Host 上接受凭据。 */
+  /** Empty keeps single-domain deployments working; once set, the admin API only accepts credentials on these Hosts. */
   adminHosts: str("ADMIN_HOSTS").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
   /**
-   * 未登录访客看不到的分类。公开演示站默认挡掉 pan/course：
-   * 这两个分类聚合的是第三方网盘分享链接（影视/教程/软件），公开展示有版权风险。
-   * 自部署想全开就设 GUEST_HIDDEN_CATEGORIES= 空字符串。
+   * Categories invisible to logged-out visitors. A public demo site blocks pan/course by default:
+   * those two categories aggregate third-party cloud-drive share links (movies / courses / software), a copyright risk to show publicly.
+   * Self-hosted installs that want them all visible can set GUEST_HIDDEN_CATEGORIES= to an empty string.
    */
   guestHiddenCategories: str("GUEST_HIDDEN_CATEGORIES", "pan,course").split(",").map((s) => s.trim()).filter(Boolean),
-  /** 只有源站已封口、反代会覆盖转发头时才开启。 */
+  /** Only turn on when the origin is closed and the reverse proxy overwrites forwarding headers. */
   trustProxy: bool("TRUST_PROXY", false),
   rateLimitEnabled: bool("RATE_LIMIT_ENABLED", true),
-  /** 仅 selfhost 可显式允许内网 Webhook，公开站始终禁止。 */
+  /** Only selfhost can explicitly allow private-network Webhooks; a public site always forbids them. */
   webhookAllowPrivate: bool("WEBHOOK_ALLOW_PRIVATE", false),
 } as const;
 
 /**
- * 站点形态解析：auto = 配了 LINUX DO OAuth 就按公开站跑，否则按单人自建。
- * 公开站的核心差异是「个人状态按登录用户隔离」，自建站保持旧的全局行为。
+ * Site shape resolution: auto = run as a public site when LINUX DO OAuth is configured, otherwise as a single-operator install.
+ * The core difference of a public site is "personal state isolated per logged-in user"; a self-hosted site keeps the old global behavior.
  */
 export const siteMode: "selfhost" | "public" =
   config.siteMode === "selfhost" || config.siteMode === "public"
@@ -147,17 +147,17 @@ export const siteMode: "selfhost" | "public" =
 
 export const isPublicSite = siteMode === "public";
 
-/** OAuth 是否配置齐全（缺凭据时前端不显示登录按钮） */
+/** Whether OAuth is fully configured (the frontend hides the login button when credentials are missing) */
 export const linuxdoConfigured = Boolean(config.linuxdoClientId && config.linuxdoClientSecret);
-/** GitHub OAuth 是否配置齐全 */
+/** Whether GitHub OAuth is fully configured */
 export const githubConfigured = Boolean(config.githubClientId && config.githubClientSecret);
 
-/** 本地模拟登录：只在非生产环境且显式开启时可用 */
+/** Local mock login: usable only outside production and when explicitly enabled */
 export const devMockEnabled = config.authDevMock && process.env.NODE_ENV === "development";
 
 /**
- * 公开站及生产环境未配 ADMIN_TOKEN 时管理区必须锁死。
- * 非生产自建站保持向后兼容；默认监听回环地址。
+ * A public site, and any production environment without ADMIN_TOKEN, must lock the admin area down.
+ * Non-production self-hosted sites stay backward compatible; the default listen address is loopback.
  */
 export const adminLocked = (isPublicSite || process.env.NODE_ENV === "production") && !config.adminToken;
 

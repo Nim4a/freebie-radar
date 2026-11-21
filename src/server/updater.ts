@@ -39,10 +39,10 @@ async function git(args: string[]): Promise<string | null> {
 }
 
 /**
- * 环境判定：
- *   - 仓库里有 .git 且 git 可用 → 能一键源码更新
- *   - 容器里（无 .git）但配了 UPDATE_WEBHOOK_URL → 交给宿主机脚本更新
- *   - 其余（标准容器）→ 只能看变更、复制命令到宿主机执行，不能假装能一键更新
+ * Environment detection:
+ *   - .git present in the repo and git available -> one-click source update is possible
+ *   - inside a container (no .git) but UPDATE_WEBHOOK_URL is set -> hand the update to the host script
+ *   - anything else (standard container) -> can only show changes and copy commands for the host to run; must not pretend a one-click update works
  */
 async function detectRuntimeMode(): Promise<RuntimeMode> {
   if (existsSync(resolve(process.cwd(), ".git"))) {
@@ -148,7 +148,7 @@ async function gitAheadCount(): Promise<number> {
   return out ? Number(out) || 0 : 0;
 }
 
-/** 容器 / 非 git 环境：走 GitHub API 比一下提交，至少让站长看到「有没有新东西」 */
+/** Container / non-git environment: compare commits through the GitHub API, so at least the site owner sees whether there is anything new */
 async function githubLatest(): Promise<{ latest: UpdateCommit | null; commits: UpdateCommit[]; behind: number }> {
   const url = `https://api.github.com/repos/${config.appRepo}/commits?sha=${encodeURIComponent(config.selfUpdateBranch)}&per_page=20`;
   const headers: Record<string, string> = { accept: "application/vnd.github+json", "user-agent": "freebie-radar" };
@@ -182,8 +182,8 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
     const latest = await gitFetchLatest();
     const commits = latest ? await gitCommitsBehind() : [];
     const ahead = await gitAheadCount();
-    if (ahead > 0) notes.push(`本地有 ${ahead} 个提交未推送，一键更新会以远端为准`);
-    if (dirtyFiles.length) notes.push(`工作区有 ${dirtyFiles.length} 个未提交改动，一键更新会被拒绝（避免覆盖）`);
+    if (ahead > 0) notes.push(`local branch is ${ahead} commits ahead and not pushed; a one-click update will follow the remote`);
+    if (dirtyFiles.length) notes.push(`the working tree has ${dirtyFiles.length} uncommitted changes; a one-click update would be refused (to avoid overwriting them)`);
     return {
       runtimeMode: current.runtimeMode,
       current,
@@ -201,11 +201,11 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
 
   const gh = await githubLatest();
   const same = current.commit && gh.latest?.sha === current.commit;
-  if (!current.commit) notes.push("当前版本没有 commit 信息（构建时未注入 APP_COMMIT），无法精确比较，只能列出远端最新提交");
+  if (!current.commit) notes.push("the current version has no commit info (APP_COMMIT was not injected at build time); an exact comparison is impossible, so only the latest remote commits are listed");
   notes.push(
     current.runtimeMode === "docker-webhook"
-      ? "容器内无法重建镜像；点击更新会调用你配置的宿主机 Webhook 脚本"
-      : "标准 Docker 容器内不能自更新，请复制宿主机命令手动执行",
+      ? "the image cannot be rebuilt inside the container; clicking update calls the host Webhook script you configured"
+      : "a standard Docker container cannot self-update; copy the host command and run it manually",
   );
   return {
     runtimeMode: current.runtimeMode,
@@ -223,7 +223,7 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
 }
 
 /* ------------------------------------------------------------------ *
- * 一键更新任务（内存态，供前端轮询）
+ * One-click update job (in-memory, polled by the frontend)
  * ------------------------------------------------------------------ */
 
 export type UpdateStep = { name: string; status: "pending" | "running" | "done" | "failed" | "skipped"; detail?: string };
@@ -260,7 +260,7 @@ function backupDatabase(): string {
   const dir = resolve(process.cwd(), "data", "backups");
   mkdirSync(dir, { recursive: true });
   const file = resolve(dir, `radar-pre-update-${new Date().toISOString().replace(/[:.]/g, "-")}.db`);
-  // 用 SQLite 自己的 VACUUM INTO，WAL 模式下也能拿到一致快照
+  // Use SQLite's own VACUUM INTO; it yields a consistent snapshot even in WAL mode
   getDb().exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
   return file;
 }
@@ -277,7 +277,7 @@ function pruneBackups(keep = 3): void {
       if (victim) rmSync(resolve(dir, victim), { force: true });
     }
   } catch {
-    /* 清理失败不影响更新 */
+    /* A failed cleanup does not affect the update */
   }
 }
 
@@ -303,33 +303,33 @@ export async function runUpdate(): Promise<UpdateJob> {
   } else {
     job.status = "failed";
     job.finishedAt = new Date().toISOString();
-    job.error = "当前为只读容器环境，无法在进程内自更新";
-    job.steps.push({ name: "环境预检", status: "failed", detail: job.error });
+    job.error = "this is a read-only container environment; it cannot self-update in-process";
+    job.steps.push({ name: "environment precheck", status: "failed", detail: job.error });
   }
   return job;
 }
 
 async function gitUpdate(job: UpdateJob): Promise<void> {
   try {
-    const precheck = step(job, "环境预检");
+    const precheck = step(job, "environment precheck");
     const dirty = await gitDirtyFiles();
     if (dirty.length) {
       precheck.status = "failed";
-      precheck.detail = `工作区有未提交改动：${dirty.slice(0, 5).join(", ")}`;
+      precheck.detail = `working tree has uncommitted changes: ${dirty.slice(0, 5).join(", ")}`;
       job.error = precheck.detail;
       throw new Error(precheck.detail);
     }
-    append(job, "$ git status --porcelain → 干净");
+    append(job, "$ git status --porcelain -> clean");
     precheck.status = "done";
 
-    const fetchStep = step(job, "拉取远端");
+    const fetchStep = step(job, "fetch remote");
     const latest = await gitFetchLatest();
-    append(job, `远端最新：${latest?.short ?? "?"} ${latest?.message ?? ""}`);
+    append(job, `remote latest: ${latest?.short ?? "?"} ${latest?.message ?? ""}`);
     fetchStep.status = "done";
 
-    const backupStep = step(job, "备份数据库");
+    const backupStep = step(job, "backup database");
     const backupPath = backupDatabase();
-    append(job, `已备份到 ${backupPath}`);
+    append(job, `backed up to ${backupPath}`);
     pruneBackups(3);
     backupStep.status = "done";
 
@@ -339,10 +339,10 @@ async function gitUpdate(job: UpdateJob): Promise<void> {
       ["pull", "--ff-only", config.selfUpdateRemote, config.selfUpdateBranch],
       { cwd: process.cwd(), timeout: 120_000, windowsHide: true },
     );
-    append(job, stdout || stderr || "已是最新");
+    append(job, stdout || stderr || "already up to date");
     pullStep.status = "done";
 
-    const installStep = step(job, "安装依赖与构建");
+    const installStep = step(job, "install dependencies and build");
     append(job, "$ pnpm install --frozen-lockfile");
     const inst = await exec("pnpm", ["install", "--frozen-lockfile"], { cwd: process.cwd(), timeout: 300_000, windowsHide: true });
     append(job, inst.stdout || inst.stderr);
@@ -353,21 +353,21 @@ async function gitUpdate(job: UpdateJob): Promise<void> {
 
     job.status = "done";
     job.finishedAt = new Date().toISOString();
-    append(job, "更新完成，准备重启进程…");
+    append(job, "update finished, restarting the process...");
     scheduleRestart(job);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     job.status = "failed";
     job.error = msg;
     job.finishedAt = new Date().toISOString();
-    append(job, "更新失败：" + msg);
+    append(job, "update failed: " + msg);
     for (const s of job.steps) if (s.status === "running") s.status = "failed";
   }
 }
 
 async function webhookUpdate(job: UpdateJob): Promise<void> {
   try {
-    const s = step(job, "调用宿主机更新 Webhook");
+    const s = step(job, "call host update Webhook");
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (config.updateWebhookToken) headers.authorization = "Bearer " + config.updateWebhookToken;
     const res = await fetch(config.updateWebhookUrl, {
@@ -378,7 +378,7 @@ async function webhookUpdate(job: UpdateJob): Promise<void> {
     });
     const text = (await res.text()).slice(0, 4000);
     append(job, text);
-    if (!res.ok) throw new Error("Webhook 返回 HTTP " + res.status);
+    if (!res.ok) throw new Error("Webhook returned HTTP " + res.status);
     s.status = "done";
     job.status = "done";
     job.finishedAt = new Date().toISOString();
@@ -387,7 +387,7 @@ async function webhookUpdate(job: UpdateJob): Promise<void> {
     job.status = "failed";
     job.error = msg;
     job.finishedAt = new Date().toISOString();
-    append(job, "Webhook 更新失败：" + msg);
+    append(job, "Webhook update failed: " + msg);
     for (const s of job.steps) if (s.status === "running") s.status = "failed";
   }
 }
@@ -404,12 +404,12 @@ function scheduleRestart(job: UpdateJob): void {
       }
       return;
     }
-    // 没配重启命令：主动退出，交给 systemd / pm2 / docker restart 策略拉起来
+    // No restart command configured: exit on purpose and let the systemd / pm2 / docker restart policy bring it back up
     process.exit(0);
   }, 1200).unref?.();
 }
 
-/** 宿主机升级命令（docker-readonly 环境下给前端一键复制） */
+/** Host upgrade command (offered to the frontend for one-click copy in the docker-readonly environment) */
 export function hostUpdateCommand(): string {
   return [
     `cd /opt/freebie-radar`,

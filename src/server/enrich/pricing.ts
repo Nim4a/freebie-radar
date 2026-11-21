@@ -1,11 +1,11 @@
-/** 从标题/摘要里判定「要花多少钱」，用于「最高 willing to pay」筛选。 */
+/** Decides "how much does it cost" from the title/summary, feeding the "max willing to pay" filter. */
 
 export type PriceInfo = {
-  /** 归一化到人民币的金额；null 表示未知（不是 0） */
+  /** Amount normalised to CNY; null means unknown (not 0) */
   price: number | null;
-  /** 原始币种，便于展示 */
+  /** Original currency, for display */
   currency: "CNY" | "USD" | null;
-  /** 明确免费/白嫖 */
+  /** Explicitly free / freebie */
   isFree: boolean;
 };
 
@@ -14,7 +14,7 @@ const USD_TO_CNY = 7.2;
 const FREE = /免费|白嫖|(?:^|[^\d.])0(?:\.0+)?\s*元|零元|限免|白送|白给|免单|不要钱|免费领|报名领|免费送|每天送|每日送|\bfree(?:bie)?\b/i;
 const FAKE_FREE = /\bfree\s+(?:shipping|delivery|returns?|pickup|update)\b|免运费|免邮|包邮|免费更新|免费升级/gi;
 
-/** 只有这几种表达才是「你要付的钱」，避免把「省 30 块」「200 元耳机怎么选」当成价格。 */
+/** Only these phrasings count as "the money you pay", so "saves you 30 yuan" or "how to pick a 200-yuan headset" is not read as a price. */
 const PATTERNS: { re: RegExp; currency: "CNY" | "USD" }[] = [
   { re: /[¥￥]\s*(\d+(?:\.\d+)?)/g, currency: "CNY" },
   { re: /(?:最低|仅需|只需|只要|低至|原价\s*)?\s*(\d+(?:\.\d+)?)\s*元\s*(?:起|购|入手|到手|拿下|带走)/g, currency: "CNY" },
@@ -22,7 +22,7 @@ const PATTERNS: { re: RegExp; currency: "CNY" | "USD" }[] = [
   { re: /\$\s*(\d+(?:\.\d+)?)/g, currency: "USD" },
 ];
 
-/** 命中位置前面出现这些词，说明这个数字不是售价。 */
+/** If one of these words precedes the match, the number is not a sale price. */
 const NEGATIVE = /省|贵|涨|降|价值|原价|满|返|抵|券|优惠|股价|市值|卖掉|售价为|售价约|收入|亏|送|赠|抽|奖|赢|领取|获得|累计|最高/;
 
 function contextIsNegative(text: string, index: number): boolean {
@@ -32,8 +32,8 @@ function contextIsNegative(text: string, index: number): boolean {
 
 export function extractPrice(title: string, summary?: string | null): PriceInfo {
   const text = title + " " + (summary ?? "");
-  // 只看标题：摘要里的「免费」多半在讲别的东西（「虽然免费但没用」），
-  // 会造成「京东 plus 准备不用了」这种被标成白嫖的误判。
+  // Title only: "free" in the summary usually talks about something else ("free, but useless"),
+  // which used to mislabel posts like "about to cancel JD Plus" as a freebie.
   const strippedTitle = title.replace(FAKE_FREE, " ");
   const isFree = FREE.test(strippedTitle);
 

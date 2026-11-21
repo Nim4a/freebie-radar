@@ -3,31 +3,31 @@ import { cleanText, parseDate, sanitizeImageUrl } from "../enrich/normalize.ts";
 import type { Collector, RawItem } from "./types.ts";
 
 /**
- * 微博采集（PC 端 ajax 接口，需要 weibo.com 登录态 Cookie）。
+ * Weibo collector (PC ajax API, requires a logged-in weibo.com cookie).
  *
- * 实测（2026-11-15，用真实登录 cookie）：
- * - `weibo.com/ajax/statuses/search?q=<kw>&page=1` → 200 / 340KB / `statuses[]` 48-50 条，
- *   `total_number` 表示命中总数（"免费领取" = 2269246）；`sort=hot|time` 参数无效，恒为时间序；
- * - `weibo.com/ajax/statuses/mymblog?uid=<uid>&page=1&feature=0` → 200 / `data.list[]` 20 条（盯指定博主）；
- * - `m.weibo.cn/api/container/getIndex` 用 PC cookie 返回 `ok:-100` 跳登录 —— **移动域不认 weibo.com 的 SUB**，
- *   所以只能走 PC ajax；
- * - 微博没有官方 RSS，RSSHub 的 weibo 路由公共实例全挂（rsshub.app 连不上 / rssforever 503），自建成本高。
+ * Measured 2026-11-15 with a real login cookie:
+ * - `weibo.com/ajax/statuses/search?q=<kw>&page=1` → 200 / 340KB / `statuses[]` 48-50 entries,
+ *   `total_number` is the total hit count ("免费领取" = 2269246); the `sort=hot|time` parameter has no effect, results are always in time order;
+ * - `weibo.com/ajax/statuses/mymblog?uid=<uid>&page=1&feature=0` → 200 / `data.list[]` 20 entries (watching specific accounts);
+ * - `m.weibo.cn/api/container/getIndex` returns `ok:-100` (login redirect) with a PC cookie -- **the mobile domain does not accept weibo.com's SUB**,
+ *   so the PC ajax API is the only option;
+ * - Weibo has no official RSS, and RSSHub's weibo routes are all down on public instances (rsshub.app unreachable / rssforever 503), while self-hosting is expensive.
  *
- * 内容噪声很大（营销号刷 `#SVIP体验卡免费领#`、手游私服广告），所以：
- * - 同一段文案被几十个号转发时按正文指纹合并，只留互动量最高的一条；
- * - 标题用正文首句（微博没有标题字段）。
+ * There is a lot of noise (marketing accounts spamming `#SVIP体验卡免费领#`, mobile-game private-server ads), so:
+ * - when the same copy is reposted by dozens of accounts, merge by body fingerprint and keep only the most engaged one;
+ * - the title is the first sentence of the body (Weibo has no title field).
  */
 
 type WeiboConfig = {
-  /** 关键词搜索 */
+  /** keyword search */
   keywords?: string[];
-  /** 盯人的 uid 列表（走 mymblog） */
+  /** list of uids to watch (uses mymblog) */
   uids?: string[];
   limitPerKeyword?: number;
   limitPerUser?: number;
-  /** 正文必须命中其一，默认福利白名单 */
+  /** the body must match at least one of these; defaults to the freebie whitelist */
   titleKeywords?: string[];
-  /** 正文命中即丢弃 */
+  /** a body matching any of these is dropped */
   excludeKeywords?: string[];
   categoryHint?: string;
 };
@@ -47,7 +47,7 @@ const DEFAULT_TITLE_KEYWORDS = [
   "会员",
 ];
 
-/** 实测刷屏最猛的两类：营销模板与私服广告 */
+/** measured as the two most spammy kinds: marketing templates and private-server ads */
 const DEFAULT_EXCLUDE_KEYWORDS = [
   "获取原图",
   "街拍",
@@ -77,7 +77,7 @@ function textOf(s: Status): string {
   return cleanText(String(s.text_raw ?? s.text ?? ""), 600);
 }
 
-/** 微博没有标题，取正文首个句子作为标题（福利信息通常第一句就说完） */
+/** Weibo has no title, so take the first sentence of the body (freebie info usually says everything in the first sentence) */
 function titleOf(text: string): string {
   const cut = text.split(/[。！!？?，,；;\n]/)[0] ?? text;
   const t = cut.trim();
@@ -123,7 +123,7 @@ function toRawItem(s: Status): RawItem | null {
   };
 }
 
-/** 正文指纹：去掉表情/话题符号与空白后的前 40 字，用于合并营销号刷屏 */
+/** body fingerprint: the first 40 characters after stripping emoji / topic markers and whitespace, used to merge marketing spam */
 function fingerprint(text: string): string {
   return text
     .replace(/[\s\p{P}\p{S}]/gu, "")
@@ -232,7 +232,7 @@ export const weiboCollector: Collector = {
 
     if (!ok && problems.length) throw new Error("微博采集全部失败: " + problems.join("; "));
 
-    // 按 mid 去重 + 按正文指纹合并营销号刷屏（保留互动量最高的一条）
+    // dedupe by mid + merge marketing spam by body fingerprint (keeping the most engaged entry)
     const byId = new Map<string, RawItem>();
     for (const it of items) if (!byId.has(it.externalId)) byId.set(it.externalId, it);
     const unique = [...byId.values()].sort((a, b) => engagement(b) - engagement(a));
@@ -254,5 +254,5 @@ export const weiboCollector: Collector = {
   },
 };
 
-/** 供测试使用 */
+/** exposed for tests */
 export const __weiboInternals = { toRawItem, titleOf, fingerprint, engagement, cookieHeader };

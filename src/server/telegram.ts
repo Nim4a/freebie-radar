@@ -16,8 +16,8 @@ export type TelegramTarget = {
 };
 
 /**
- * 统一发送入口：全局 Bot 与个人 Bot 共用一套实现，
- * 区别只在 token / chat_id 从哪来（config 还是 user_push_configs 解密出来的）。
+ * Single send entry point: the global Bot and the personal Bots share one implementation;
+ * they differ only in where token / chat_id come from (config, or decrypted from user_push_configs).
  */
 export async function sendTelegramWith(target: TelegramTarget, text: string): Promise<void> {
   const base = (target.apiBase ?? config.telegramApiBase).replace(/\/+$/, "");
@@ -35,8 +35,8 @@ export async function sendTelegramWith(target: TelegramTarget, text: string): Pr
   const proxy = target.proxy ?? config.telegramProxy;
   let doFetch: typeof fetch = fetch;
   if (proxy) {
-    // 必须用「包内 undici」自己的 fetch：Node 内置 undici(7.x) 与 node_modules 里的
-    // undici(8.x) 的 dispatcher handler 协议不同，混用会抛
+    // Must use the fetch from the bundled undici: Node's built-in undici (7.x) and the one in node_modules
+    // undici (8.x) speak different dispatcher handler protocols, and mixing them throws
     // InvalidArgumentError: invalid onRequestStart method
     const client = await proxyFetch(proxy);
     init.dispatcher = client.agent;
@@ -56,8 +56,8 @@ export async function sendTelegram(text: string): Promise<void> {
 export type DetectedChat = { chatId: string; title: string; type: string };
 
 /**
- * 让用户少踩「chat_id 填什么」的坑：调 getUpdates 把他最近跟这个 Bot 说过话的会话列出来。
- * 用户只需要先给自己的 Bot 发一句 /start。
+ * Saves users from the "what do I put in chat_id" trap: call getUpdates to list the conversations
+ * they recently had with this Bot. They only need to send /start to their own Bot first.
  */
 export async function detectTelegramChatIds(botToken: string): Promise<DetectedChat[]> {
   const base = config.telegramApiBase.replace(/\/+$/, "");
@@ -82,7 +82,7 @@ export async function detectTelegramChatIds(botToken: string): Promise<DetectedC
     }>;
   };
   if (!res.ok || body.ok === false) {
-    throw new Error(body.description ?? "Telegram getUpdates 失败（HTTP " + res.status + "）");
+    throw new Error(body.description ?? "Telegram getUpdates failed (HTTP " + res.status + ")");
   }
   const seen = new Map<string, DetectedChat>();
   for (const upd of body.result ?? []) {

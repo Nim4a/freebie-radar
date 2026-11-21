@@ -8,7 +8,7 @@ function keywordsForSite(site: CookieSiteKey, maxKeywords = 4): string[] {
   if (site === "xiaoheihe") return base;
   const extra = all<{ keyword: string }>("SELECT keyword FROM subscriptions ORDER BY keyword").map((r) => r.keyword.trim()).filter(Boolean);
   const pool = [...new Set([...base, ...extra])].slice(0, maxKeywords);
-  // 小红书需走国内代理逐页渲染：每轮保底搜核心词 + 1 个轮换词（2 词约 35-55 秒完赛），避免 4 词连抓超 3 分钟
+  // Xiaohongshu has to go through the mainland proxy and render page by page: each round guarantees the core term plus 1 rotating term (2 terms take about 35-55 seconds), avoiding 4 terms in a row exceeding 3 minutes
   if (site === "xhs" && pool.length > 2) {
     const rot = pool.slice(1);
     const idx = Math.floor(Date.now() / 3_600_000) % rot.length;
@@ -38,10 +38,10 @@ type RunnerResponse = {
 };
 
 /**
- * 服务端 Cookie 托管采集器：
- * - 对知乎 / 小红书 / 小黑盒按需向 VPS 上的轻量无头执行器（vps-cookie-runner）发请求
- * - 执行器拉起无头 Chrome 注入托管 Cookie（小红书自动走国内代理）、抓完立即退出，平时 0 MB 浏览器内存
- * - 未配置 Cookie 或 runnerUrl 时明确提示，仍保留本机回环/油猴回传路径（POST /api/ingest）
+ * Server-side cookie-hosted collectors:
+ * - on demand, request Zhihu / Xiaohongshu / Xiaoheihe through the lightweight headless executor on the VPS (vps-cookie-runner)
+ * - the executor starts headless Chrome, injects the hosted cookies (Xiaohongshu automatically goes through the mainland proxy), scrapes and exits immediately, so it uses 0 MB of browser memory the rest of the time
+ * - when no cookie or runnerUrl is configured it says so explicitly, and the local loopback / userscript path (POST /api/ingest) is still kept
  */
 export const cookieIngestCollector: Collector = {
   kind: "ingest",

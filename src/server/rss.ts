@@ -29,11 +29,11 @@ function escapeXml(input: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;")
-    // XML 1.0 不允许的控制字符，直接剔掉，否则阅读器会整体解析失败
+    // XML 1.0 forbids control characters; strip them outright or readers fail on the whole document
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
 }
 
-/** CDATA 里唯一需要处理的是 `]]>` 序列，拆开即可 */
+/** The only thing to handle inside CDATA is the `]]>` sequence; split it apart */
 function cdata(input: string): string {
   return "<![CDATA[" + input.replace(/]]>/g, "]]]]><![CDATA[>") + "]]>";
 }
@@ -58,25 +58,25 @@ function parseAi(raw: string | null): { reason?: string; quality?: number } {
 }
 
 function priceLabel(item: RssItem): string | null {
-  if (item.is_free === 1 || item.price === 0) return "免费";
+  if (item.is_free === 1 || item.price === 0) return "Free";
   if (typeof item.price === "number" && item.price > 0) return (item.price < 1 ? "<¥1" : "¥" + Math.round(item.price));
   return null;
 }
 
 function describe(item: RssItem): string {
   const parts: string[] = [];
-  const cat = CATEGORY_LABEL[item.category ?? "other"] ?? item.category ?? "其它";
+  const cat = CATEGORY_LABEL[item.category ?? "other"] ?? item.category ?? "Other";
   const kind = KIND_LABEL[item.kind ?? "freebie"] ?? item.kind ?? "";
   parts.push(`${cat}${kind ? " · " + kind : ""}`);
   const price = priceLabel(item);
   if (price) parts.push(price);
-  if (item.score) parts.push(Math.round(item.score) + " 分");
+  if (item.score) parts.push(Math.round(item.score) + " pts");
   if (item.expires_at) {
     const days = Math.ceil((Date.parse(item.expires_at) - Date.now()) / 86_400_000);
-    if (days >= 0 && days <= 30) parts.push(days === 0 ? "今天截止" : `${days} 天后截止`);
+    if (days >= 0 && days <= 30) parts.push(days === 0 ? "expires today" : `${days} days left`);
   }
   const codes = parseCodes(item.codes);
-  if (codes.length) parts.push("兑换码：" + codes.join(" / "));
+  if (codes.length) parts.push("Codes: " + codes.join(" / "));
   const ai = parseAi(item.ai);
   const lines = [parts.join(" · ")];
   if (item.summary) lines.push("", item.summary);
@@ -89,15 +89,15 @@ export type RssFeedOptions = {
   title: string;
   link: string;
   description: string;
-  /** 自身地址，写进 atom:link rel=self，方便阅读器去重 */
+  /** Own URL, written into atom:link rel=self so readers can de-duplicate */
   selfUrl: string;
-  /** 条目上限，默认 50 */
+  /** Item cap, 50 by default */
   limit?: number;
 };
 
 /**
- * 输出 RSS 2.0。描述用 CDATA 包住纯文本摘要（不是 HTML），
- * 这样任何阅读器都不会把正文里的 `<` 当成标签。
+ * Emits RSS 2.0. Descriptions wrap the plain-text summary in CDATA (not HTML),
+ * so no reader mistakes a `<` in the body for a tag.
  */
 export function buildRssXml(items: readonly RssItem[], opts: RssFeedOptions): string {
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
@@ -123,7 +123,7 @@ export function buildRssXml(items: readonly RssItem[], opts: RssFeedOptions): st
     body.push(`<link>${escapeXml(item.url)}</link>`);
     body.push(`<guid isPermaLink="false">radar-${item.id}</guid>`);
     if (pubDate && !Number.isNaN(pubDate.getTime())) body.push(`<pubDate>${pubDate.toUTCString()}</pubDate>`);
-    body.push(`<category>${escapeXml(CATEGORY_LABEL[item.category ?? "other"] ?? "其它")}</category>`);
+    body.push(`<category>${escapeXml(CATEGORY_LABEL[item.category ?? "other"] ?? "Other")}</category>`);
     body.push(`<dc:source>${escapeXml(item.source_id)}</dc:source>`);
     if (item.image_url && /^https?:\/\//i.test(item.image_url)) {
       body.push(`<enclosure url="${escapeXml(item.image_url)}" type="image/jpeg" length="0"/>`);

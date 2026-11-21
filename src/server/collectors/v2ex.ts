@@ -30,9 +30,9 @@ export const v2exCollector: Collector = {
     const url = "https://www.v2ex.com/api/topics/show.json?node_name=" + encodeURIComponent(node);
     ctx.log("GET " + url);
 
-    // V2EX 是纯 JSON API，没有 Cloudflare 挑战，直连即可。
-    // 之前只要有 FlareSolverr 就无条件走它，每次采集都要启动一次 Chrome（约 10 秒 CPU 满载），
-    // 在 2 核机器上会把 API 响应挤到 10 秒，切页面卡死。只有直连失败才降级。
+    // V2EX is a plain JSON API with no Cloudflare challenge, so a direct request works.
+    // it used to go through FlareSolverr whenever one was configured, which started Chrome on every collection (about 10 seconds of saturated CPU),
+    // pushing API responses to 10 seconds on a 2-core machine and freezing page loads. Only fall back when the direct request fails.
     let topics: V2Topic[];
     const direct = await ctx.http.json<V2Topic[]>(url).catch(() => null);
     if (direct && direct.status === 200) {

@@ -20,10 +20,10 @@ function parseCodes(raw: string | null): string[] {
   }
 }
 /**
- * AI 异步审核队列：
- * - 支持「极速抢码先推后审」模式在后台补齐 AI 结论
- * - 支持「推送前先审」模式消化超过同步上限的剩余新条目
- * - 审核通过（aiKeep=true）且尚未推送的条目，可通过回调触发补推（进即时或攒批队列）
+ * AI async review queue:
+ * - supports the "grab the code first, review later" mode that fills in the AI verdict in the background
+ * - supports the "review before push" mode that consumes the remaining new items beyond the sync limit
+ * - items that pass review (aiKeep=true) and have not been pushed yet can be re-pushed via a callback (into the immediate or batched queue)
  */
 
 export type AiQueueJob = {
@@ -49,7 +49,7 @@ export function setPostReviewHandler(handler: PostReviewHandler | null): void {
   postReviewHandler = handler;
 }
 
-/** 采集侧调用：把新条目排进队列，立刻返回。 */
+/** Collector-side call: enqueue new items and return immediately. */
 export function enqueueForAi(items: AiQueueJob[]): void {
   if (!items.length) return;
   const existingIds = new Set(queue.map((q) => q.itemId));
@@ -120,7 +120,7 @@ function applyVerdictToItem(itemId: number, verdict: AiVerdict): AppliedVerdict 
       kindHint: hints.kindHint,
       guardEnabled: hints.guardEnabled,
     });
-    // 白嫖证据校验：抽奖 → lottery，明确标价 → deal
+    // Freebie evidence check: lottery -> lottery, explicit price -> deal
     const evidenced = enforceFreebieEvidence(autoKind, effectiveObtain, cur?.title ?? "", rawCategory, {
       summary: cur?.summary,
       codes: parseCodes(cur?.codes),
@@ -129,7 +129,7 @@ function applyVerdictToItem(itemId: number, verdict: AiVerdict): AppliedVerdict 
     const finalKind = evidenced.kind;
     const finalObtain = evidenced.obtain === undefined ? effectiveObtain : evidenced.obtain;
     const finalCategoryHint = evidenced.category ?? rawCategory;
-    // 资讯/水帖不许落进实物福利：AI 标错时统一降级到兜底分类
+    // News / chit-chat must not land in physical freebies: downgrade to the fallback category when the AI gets it wrong
     const autoCategory = demoteEditorialGoods(
       demoteOfflineCategory(
         finalCategoryHint,
@@ -194,7 +194,7 @@ codes: parseCodes(cur.codes),
   }
 }
 
-/** 推送前同步审核：把本轮待推送新条目先送模型判定并写库，返回各 itemId 的最新结论。 */
+/** Review before push: send this round's pending new items to the model for a verdict and write to the DB; returns each itemId's latest conclusion. */
 export async function reviewFreshNow(items: AiQueueJob[]): Promise<Map<number, AppliedVerdict>> {
   const out = new Map<number, AppliedVerdict>();
   if (!items.length) return out;
@@ -208,7 +208,7 @@ export async function reviewFreshNow(items: AiQueueJob[]): Promise<Map<number, A
   const srcId = items[0]?.sourceId;
   const jobId = startAiJob({
     stage: "sync",
-    label: srcId ? `${srcId} · 推送前同步审核` : "推送前同步审核",
+    label: srcId ? `${srcId} · review before push` : "review before push",
     sourceId: srcId,
     model: s.model,
     total: items.length,
@@ -248,7 +248,7 @@ export async function reviewFreshNow(items: AiQueueJob[]): Promise<Map<number, A
       },
     });
     if (!map) {
-      finishAiJob(jobId, { error: batchErr ?? "模型未返回有效结论" });
+      finishAiJob(jobId, { error: batchErr ?? "the model returned no valid conclusion" });
       return out;
     }
     const keptIds: number[] = [];
@@ -268,7 +268,7 @@ export async function reviewFreshNow(items: AiQueueJob[]): Promise<Map<number, A
       try {
         await dedupeKeptItemsWithAi(keptIds);
       } catch (err) {
-        console.log("[ai-queue] 语义去重失败:", err instanceof Error ? err.message : String(err));
+        console.log("[ai-queue] semantic dedup failed:", err instanceof Error ? err.message : String(err));
       }
     }
     finishAiJob(jobId);
@@ -296,7 +296,7 @@ async function drain(): Promise<void> {
 
       const jobId = startAiJob({
         stage: "queue",
-        label: "异步队列波次",
+        label: "async queue batch",
         sourceId: batch[0]?.sourceId,
         model: s.model,
         total: batch.length,
@@ -343,7 +343,7 @@ async function drain(): Promise<void> {
       }
       if (!map) {
         dropped += batch.length;
-        finishAiJob(jobId, { error: batchErr ?? "模型未返回有效结论" });
+        finishAiJob(jobId, { error: batchErr ?? "the model returned no valid conclusion" });
         continue;
       }
       finishAiJob(jobId);
@@ -366,12 +366,12 @@ async function drain(): Promise<void> {
         }
       }
 
-      // 先聚类去重再补推：避免同一活动被多个源各推一次（B站大会员 / 喜加一 尤甚）
+      // Cluster-dedupe before re-pushing: avoid the same campaign being pushed once per source (B站/喜加一 style giveaways especially)
       if (keptIds.length) {
         try {
           await dedupeKeptItemsWithAi(keptIds);
         } catch (err) {
-          console.error("[ai-queue] 语义去重失败:", err instanceof Error ? err.message : String(err));
+          console.error("[ai-queue] semantic dedup failed:", err instanceof Error ? err.message : String(err));
         }
       }
 
@@ -380,7 +380,7 @@ async function drain(): Promise<void> {
           try {
             await postReviewHandler(sourceId, ids);
           } catch (err) {
-            console.error("[ai-queue] 补审补推回调失败:", err instanceof Error ? err.message : String(err));
+            console.error("[ai-queue] re-review re-push callback failed:", err instanceof Error ? err.message : String(err));
           }
         }
       }

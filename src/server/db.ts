@@ -74,7 +74,7 @@ const MIGRATIONS: string[] = [
   );
   `,
 
-  /* v2：关键词订阅与提醒 */
+  /* v2: keyword subscriptions and alerts */
   `
   CREATE TABLE IF NOT EXISTS subscriptions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,7 +86,7 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS idx_subs_keyword ON subscriptions(keyword);
   `,
 
-  /* v3：时效性 —— 每源采集间隔、正文快照、抽取到的兑换码 */
+  /* v3: freshness — per-source collection interval, content snapshot, extracted redemption codes */
   `
   ALTER TABLE sources ADD COLUMN interval_sec INTEGER NOT NULL DEFAULT 10800;
   ALTER TABLE items ADD COLUMN content TEXT;
@@ -95,14 +95,14 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS idx_items_codes ON items(codes);
   `,
 
-  /* v4：价格 —— 「最高能付多少」筛选 */
+  /* v4: price — the "max payable" filter */
   `
   ALTER TABLE items ADD COLUMN price REAL;
   ALTER TABLE items ADD COLUMN is_free INTEGER NOT NULL DEFAULT 0;
   CREATE INDEX IF NOT EXISTS idx_items_price ON items(price);
   `,
 
-  /* v5：屏蔽词规则 + 已读标记 */
+  /* v5: block rules + read marker */
   `
   CREATE TABLE IF NOT EXISTS block_rules (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,7 +116,7 @@ const MIGRATIONS: string[] = [
   ALTER TABLE items ADD COLUMN read_at TEXT;
   `,
 
-  /* v6：推送设置 + 推送记录 + 标题归一化去重 */
+  /* v6: push settings + push log + title-normalization dedup */
   `
   CREATE TABLE IF NOT EXISTS settings (
     key        TEXT PRIMARY KEY,
@@ -138,36 +138,36 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS idx_items_title_key ON items(title_key);
   `,
 
-  /* v7：把 AI 判定摊平成独立列 —— 用 json_extract 过滤会让 4000+ 行的查询从 0.7s 掉到 90s 超时 */
+  /* v7: flatten the AI verdict into its own columns — filtering through json_extract takes a 4000+ row query from 0.7s to a 90s timeout */
   `
   ALTER TABLE items ADD COLUMN ai_keep INTEGER;
   CREATE INDEX IF NOT EXISTS idx_items_ai_keep ON items(ai_keep);
   UPDATE items SET ai_keep = json_extract(ai, '$.keep') WHERE ai IS NOT NULL AND ai_keep IS NULL;
   `,
 
-  /* v8：列表默认按 status + ai_keep 过滤再按 score 排序，5000+ 行没复合索引要 4 秒 */
+  /* v8: the list filters by status + ai_keep then sorts by score by default; with 5000+ rows and no composite index that takes 4 seconds */
   `
   CREATE INDEX IF NOT EXISTS idx_items_feed ON items(status, ai_keep, score DESC);
   CREATE INDEX IF NOT EXISTS idx_items_score ON items(score DESC);
   `,
 
-  /* v9：不带 ai_keep 条件时，(status, ai_keep, score) 用不上排序，退化成全表排序 */
+  /* v9: without an ai_keep condition, (status, ai_keep, score) cannot serve the sort and it degrades into a full-table sort */
   `
   CREATE INDEX IF NOT EXISTS idx_items_status_score ON items(status, score DESC);
   `,
 
-  /* v10：获取方式 —— 区分「直接白嫖」与抽奖/试用/推广/有条件，单独隔离 */
+  /* v10: acquisition mode — separating the "straight freebie" from giveaways / trials / promotions / conditional offers, kept apart */
   `
   ALTER TABLE items ADD COLUMN obtain TEXT;
   CREATE INDEX IF NOT EXISTS idx_items_obtain ON items(obtain);
   `,
 
-  /* v11：保鲜期查询要按 COALESCE(published_at, first_seen_at) 过滤，普通索引覆盖不到 */
+  /* v11: the freshness query filters on COALESCE(published_at, first_seen_at), which an ordinary index cannot cover */
   `
   CREATE INDEX IF NOT EXISTS idx_items_effective_time ON items(COALESCE(published_at, first_seen_at));
   `,
 
-  /* v12：双语跨源别名字典，让英文与纯中文报道在同一 title_key 下合并 */
+  /* v12: bilingual cross-source alias dictionary, so English and Chinese-only reports merge under the same title_key */
   `
   CREATE TABLE IF NOT EXISTS title_aliases (
     alias     TEXT PRIMARY KEY,
@@ -175,7 +175,7 @@ const MIGRATIONS: string[] = [
   );
   `,
 
-  /* v13：停用实测 0 留存的纯新闻/硬折扣/静态清单源，避免白占 AI 一审配额 */
+  /* v13: disable pure-news / hard-discount / static-list sources measured at 0 retention, so they stop eating the first-pass AI quota for nothing */
   `
   UPDATE sources SET enabled = 0
    WHERE id IN (
@@ -189,7 +189,7 @@ const MIGRATIONS: string[] = [
    );
   `,
 
-  /* v14：清理与 NodeSeek 重复的 tg-cn-deals 及实测 <1% 留存的泛资讯/静态源；Reddit 拉长周期防 429 */
+  /* v14: drop tg-cn-deals, which duplicates NodeSeek, plus generic-info / static sources measured below 1% retention; widen the Reddit interval to avoid 429s */
   `
   UPDATE sources SET enabled = 0
    WHERE id IN (
@@ -209,7 +209,7 @@ const MIGRATIONS: string[] = [
    WHERE id LIKE 'rss-reddit-%' AND interval_sec < 2700;
   `,
 
-  /* v15：引入内容形态 kind 与 AI 质量分 ai_quality，解耦「低噪有效」与「必须免费白嫖」 */
+  /* v15: introduce the content shape `kind` and the AI quality score `ai_quality`, decoupling "low-noise and useful" from "must be a freebie" */
   `
   ALTER TABLE items ADD COLUMN kind TEXT;
   ALTER TABLE items ADD COLUMN ai_quality INTEGER;
@@ -227,12 +227,12 @@ const MIGRATIONS: string[] = [
    WHERE ai IS NOT NULL AND ai_quality IS NULL;
   `,
 
-  /* v16：保存封面图 URL，支撑 2/3 列图文卡片布局 */
+  /* v16: store the cover image URL, to support the 2/3-column image card layout */
   `
   ALTER TABLE items ADD COLUMN image_url TEXT;
   `,
 
-  /* v17：把旧版 AI 自定义入口噪音词自动迁移到全局屏蔽规则 block_rules，统一成一套规则 */
+  /* v17: automatically migrate the legacy AI custom-entry noise words into the global block rules (block_rules), unifying them into one rule set */
   `
   INSERT OR IGNORE INTO block_rules (pattern, mode, scope, enabled, created_at)
   SELECT DISTINCT TRIM(je.value), 'keyword', 'all', 1, datetime('now')
@@ -247,30 +247,30 @@ const MIGRATIONS: string[] = [
      AND json_valid(value)
      AND json_type(value, '$.customNoiseKeywords') = 'array';
   `,
-  /* v18：推送记录保存「为什么推它」；日报表区分日报与周报 */
+  /* v18: the push log stores "why it was pushed"; the digest table distinguishes daily from weekly digests */
   `
   ALTER TABLE push_log ADD COLUMN reason TEXT;
   ALTER TABLE digests ADD COLUMN kind TEXT NOT NULL DEFAULT 'daily';
   `,
-  /* v19：记录 AI 实际判定时间，让「最近判定样本」按真实审核时间倒序展示 */
+  /* v19: record when the AI actually judged an item, so "recent judgement samples" show in true review-time order */
   `
   ALTER TABLE items ADD COLUMN ai_reviewed_at TEXT;
   UPDATE items SET ai_reviewed_at = COALESCE(last_seen_at, first_seen_at) WHERE ai IS NOT NULL AND ai_reviewed_at IS NULL;
   CREATE INDEX IF NOT EXISTS idx_items_ai_reviewed ON items(ai_reviewed_at DESC);
   `,
-  /* v20：把旧版统一归进 info 的时政/国际要闻拆分到 kind='news'（重要新闻），避免与行业资讯混杂 */
+  /* v20: split legacy politics / world news, all lumped under info, into kind='news' (important news) so it no longer mixes with industry information */
   `
   UPDATE items
      SET kind = 'news'
    WHERE kind = 'info'
     AND category IN ('headline', 'world');
   `,
-  /* v21：AI 语义去重聚类 ID（同一活动/福利/事件共享 canonical_id，根条目自身也置为 rootId） */
+  /* v21: AI semantic dedup cluster ID (one campaign / freebie / event shares a canonical_id; the root item is set to rootId) */
   `
   ALTER TABLE items ADD COLUMN canonical_id INTEGER;
   CREATE INDEX IF NOT EXISTS idx_items_canonical_id ON items(canonical_id);
   `,
-  /* v22：网盘资源与网课教程独立成类，历史条目按标题关键词重新落位 */
+  /* v22: cloud-drive resources and online-course tutorials become their own classes; historical items are re-sorted by title keyword */
   `
   UPDATE items SET category = 'pan'
    WHERE status = 'active'
@@ -285,7 +285,7 @@ const MIGRATIONS: string[] = [
      AND (title LIKE '%网课%' OR title LIKE '%课程%' OR title LIKE '%公开课%' OR title LIKE '%训练营%'
           OR title LIKE '%课件%' OR title LIKE '%讲义%' OR title LIKE '%视频教程%');
   `,
-  /* v23：修正 v22 里裸 %115% 造成的误判（如「115 美元」），只保留真正带网盘信号的条目 */
+  /* v23: fix the false positives a bare %115% caused in v22 (e.g. "115 USD"); keep only entries with a real cloud-drive signal */
   `
   UPDATE items SET category = 'other'
    WHERE status = 'active'
@@ -296,12 +296,12 @@ const MIGRATIONS: string[] = [
      AND title NOT LIKE '%转存%'
      AND title NOT LIKE '%夸克%';
   `,
-  /* v24：规则内容分单独落库，AI 审核后从它重算综合分，避免二次校准漂移 */
+  /* v24: store the rule content score on its own; after AI review recompute the overall score from it, avoiding drift on a second calibration */
   `
   ALTER TABLE items ADD COLUMN base_score REAL;
   UPDATE items SET base_score = score WHERE base_score IS NULL;
   `,
-  /* v25：把误落进「网盘/网课」的影视剧集与新闻移回正确分类 */
+  /* v25: move film/TV episodes and news that wrongly landed in "cloud-drive / course" back to their proper class */
   `
   UPDATE items SET category = 'media'
    WHERE status = 'active' AND category = 'pan'
@@ -316,14 +316,14 @@ const MIGRATIONS: string[] = [
      AND (title LIKE '%签署%' OR title LIKE '%备忘录%' OR title LIKE '%论坛%' OR title LIKE '%峰会%'
           OR title LIKE '%发布会%' OR title LIKE '%暗改%' OR title LIKE '%限制加码%');
 `,
-  /* v26：网盘里的课程/讲义/书籍资料归「网课/教程」，让 pan 只留纯网盘分享 */
+  /* v26: courses / handouts / book material inside cloud drives go to "course / tutorial", leaving only pure cloud-drive shares under pan */
   `
   UPDATE items SET category = 'course'
    WHERE status = 'active' AND category = 'pan'
      AND (title LIKE '%课程%' OR title LIKE '%讲义%' OR title LIKE '%训练班%' OR title LIKE '%讲完%'
           OR title LIKE '%节短课%' OR title LIKE '%实战篇%' OR title LIKE '%一套书%' OR title LIKE '%电子书%');
   `,
-  /* v27：实地福利独立成类，把线下门店/快闪/商场现场领取的实物从「实物/优惠」里拆出来 */
+  /* v27: offline freebies become their own class, pulling physical items collected at stores / pop-ups / malls out of "physical / deals" */
   `
   UPDATE items SET category = 'offline'
    WHERE status = 'active'
@@ -337,7 +337,7 @@ const MIGRATIONS: string[] = [
      AND title NOT LIKE '%通报%' AND title NOT LIKE '%签署%' AND title NOT LIKE '%白皮书%'
      AND title NOT LIKE '%备忘录%';
   `,
-  /* v28：公开站多用户 —— 登录用户、会话、个人状态/规则/推送，以及邀请码与运营配置 */
+  /* v28: multi-user public site — users, sessions, per-user state / rules / push, plus invite codes and operator settings */
   `
   CREATE TABLE IF NOT EXISTS users (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -459,7 +459,7 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX IF NOT EXISTS idx_upl_user_time ON user_push_logs(user_id, created_at DESC);
   `,
-  /* v29：实地福利收紧 —— 只命中地点词（现场/附近/门店）却没有领取动作的资讯与闲聊被误判进 offline，移出 */
+  /* v29: tighten offline freebies — news and chatter that only hit a location word (on-site / nearby / store) but describe no collection action was wrongly put in offline; move it out */
   `
   UPDATE items SET category = 'other'
    WHERE status = 'active' AND category = 'offline'
@@ -469,7 +469,7 @@ const MIGRATIONS: string[] = [
           OR title LIKE '%转租%' OR title LIKE '%租房%' OR title LIKE '%合租%'
           OR title LIKE '%记者%' OR title LIKE '%发布会%' OR title LIKE '%峰会%');
   `,
-  /* v30：资源荟萃默认固定归网盘；保留自定义 config、启停和全部个人状态 */
+  /* v30: resource round-ups are fixed to the cloud-drive class by default; custom config, enable/disable and all per-user state are kept */
   `
   UPDATE sources SET config = json_set(config, '$.fixedCategory', 'pan')
    WHERE id = 'linuxdo-resource' AND json_valid(config)
@@ -483,7 +483,7 @@ const MIGRATIONS: string[] = [
          AND json_extract(config, '$.fixedCategory') IS NOT 'pan'
      );
   `,
-  /* v31：人工分类优先于所有自动写入；SQLite 护栏覆盖 CLI/后台重审等写入 */
+  /* v31: manual classification wins over every automatic write; the SQLite guard covers writes from the CLI, background re-review and so on */
   `
   CREATE TABLE IF NOT EXISTS item_classification_overrides (
     item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
@@ -518,8 +518,8 @@ const MIGRATIONS: string[] = [
   END;
   `,
 
-  /* v??：按「有效时间」排序的复合索引 —— 列表默认按 COALESCE(published_at, first_seen_at) DESC 排，
-     旧索引都带 score，SQLite 只能走 status 前缀再建 TEMP B-TREE 排全表 1.6 万行（单次 4-7 秒）。 */
+  /* v??: composite index sorted by "effective time" — the list sorts by COALESCE(published_at, first_seen_at) DESC by default,
+     and every older index carries score, so SQLite can only use the status prefix and build a TEMP B-TREE over all 16k rows (4-7 seconds per run). */
   `
   CREATE INDEX IF NOT EXISTS idx_items_status_time
     ON items(status, COALESCE(published_at, first_seen_at) DESC);
@@ -539,10 +539,10 @@ export function getDb(): DatabaseSync {
   dbGeneration += 1;
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
-  // 调度器与手动 CLI 是两个进程共用一个 SQLite 文件，写锁竞争时多等一会儿，
-  // 避免出现 "database is locked"（跑一次全量采集要几秒）。
+  // The scheduler and the manual CLI are two processes sharing one SQLite file; wait a bit longer on write-lock contention,
+  // so "database is locked" cannot happen (a full collection run takes a few seconds).
   db.exec("PRAGMA busy_timeout = 20000;");
-  // 限制 SQLite 内存占用，适配 ≤512MB 低配 VPS
+  // Cap SQLite memory usage to suit a low-end VPS with <=512MB
   db.exec("PRAGMA cache_size = -8000;");
   db.exec("PRAGMA mmap_size = 0;");
   db.exec("PRAGMA temp_store = FILE;");
@@ -574,7 +574,7 @@ export function closeDb(): void {
   db = null;
 }
 
-/** O(1) 版本号：覆盖本连接写入、外部 CLI 写入及数据库重新打开。 */
+/** O(1) revision number: covers writes by this connection, writes by an external CLI, and the database being reopened. */
 export function dbRevision(): string {
   const conn = getDb();
   const local = conn.prepare("SELECT total_changes() AS n").get() as { n: number };
@@ -597,8 +597,8 @@ export function run(sql: string, ...params: SqlValue[]) {
 }
 
 /**
- * 写事务：BEGIN IMMEDIATE 先拿写锁再读，邀请码核销这类「读-判-写」必须用它，
- * 否则两个并发请求会同时读到 used_count 还没满而超发。
+ * Write transaction: BEGIN IMMEDIATE takes the write lock before reading, so read-check-write paths like invite-code redemption must use it,
+ * otherwise two concurrent requests both see used_count as not yet full and over-issue.
  */
 export function txImmediate<T>(fn: () => T): T {
   const conn = getDb();

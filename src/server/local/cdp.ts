@@ -24,7 +24,7 @@ function rpc(ws: WebSocket, method: string, params: Record<string, unknown> = {}
 
 async function newPage(url: string): Promise<Target> {
   const res = await fetch(CDP_BASE + "/json/new?" + encodeURIComponent(url), { method: "PUT" });
-  if (!res.ok) throw new Error("无法新建标签页: HTTP " + res.status + "（Chrome 是否用 --remote-debugging-port=9222 启动？）");
+  if (!res.ok) throw new Error("cannot create new tab: HTTP " + res.status + " (is Chrome started with --remote-debugging-port=9222?)");
   return (await res.json()) as Target;
 }
 
@@ -37,7 +37,7 @@ export async function withPage<T>(url: string, waitMs: number, fn: (ws: WebSocke
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise<void>((resolve, reject) => {
     ws.addEventListener("open", () => resolve(), { once: true });
-    ws.addEventListener("error", () => reject(new Error("CDP websocket 连接失败")), { once: true });
+    ws.addEventListener("error", () => reject(new Error("CDP websocket connection failed")), { once: true });
   });
   try {
     await rpc(ws, "Page.enable");
@@ -56,7 +56,7 @@ export async function evaluate<T>(ws: WebSocket, expression: string): Promise<T>
     returnByValue: true,
     awaitPromise: true,
   })) as { result?: { value?: T }; exceptionDetails?: { text?: string } };
-  if (result.exceptionDetails) throw new Error("页面脚本异常: " + (result.exceptionDetails.text ?? "unknown"));
+  if (result.exceptionDetails) throw new Error("page script error: " + (result.exceptionDetails.text ?? "unknown"));
   return result.result?.value as T;
 }
 
@@ -71,21 +71,21 @@ export type SiteKey = "zhihu" | "xhs" | "xiaoheihe";
 export const SITES: Record<SiteKey, { sourceId: string; label: string; url: (kw: string) => string; script: string; waitMs: number }> = {
   zhihu: {
     sourceId: "zhihu-search",
-    label: "知乎搜索",
+    label: "Zhihu Search",
     url: (kw) => "https://www.zhihu.com/search?type=content&q=" + encodeURIComponent(kw),
     script: ZHIHU_JS,
     waitMs: 4500,
   },
   xhs: {
     sourceId: "xhs-search",
-    label: "小红书搜索",
+    label: "Xiaohongshu Search",
     url: (kw) => "https://www.xiaohongshu.com/search_result?keyword=" + encodeURIComponent(kw) + "&source=web_search_result_notes",
     script: XHS_JS,
     waitMs: 5000,
   },
   xiaoheihe: {
     sourceId: "xiaoheihe-search",
-    label: "小黑盒搜索",
+    label: "Xiaoheihe Search",
     url: (kw) => "https://www.xiaoheihe.cn/app/bbs/home?keyword=" + encodeURIComponent(kw),
     script: XHH_JS,
     waitMs: 5000,

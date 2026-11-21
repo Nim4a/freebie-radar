@@ -26,7 +26,7 @@ function isFree(p: GogProduct): boolean {
   return amt === "0" || /^\$?0(\.0+)?$/.test(amt);
 }
 
-/** GOG 官方目录接口：discount=100 即 100% off（限时免费）。 */
+/** GOG official catalog API: discount=100 means 100% off (limited-time free). */
 export const gogCollector: Collector = {
   kind: "gog",
   label: "GOG 限时免费",

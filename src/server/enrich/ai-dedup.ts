@@ -17,24 +17,24 @@ export type SemanticDupMatch = {
 };
 
 const DEDUP_SYSTEM_PROMPT = [
-  "你是资源聚合与新闻资讯的「AI 语义去重」判定器。",
-  "任务：逐条判断「candidates（新候选）」是否与「anchors（已有基准）」或更早的候选条目本质上是**同一个福利活动、同一款免费游戏/软件、同一开源项目或同一件新闻事件**。",
+  "You are the AI semantic dedup judge for resource aggregation and news information.",
+  "Task: for each item, decide whether a candidate (the new candidates) is essentially **the same giveaway campaign, the same free game/software, the same open-source project, or the same news event** as an anchor (the existing baselines) or an earlier candidate.",
   "",
-  "判定为重复（必须填写 duplicateOfId）的典型情况：",
-  "- 同活动不同平台/品牌简称或措辞（如「B站免费领7天大会员」与「哔哩哔哩为庆祝BLG夺冠赠送大会员」、「BLG夺冠送七天大会员」）",
-  "- 同款限免游戏/软件的不同来源报道或中英文版本",
-  "- 同一条宏观/科技新闻的不同媒体改写（如央视、中新网、BBC 报道同一政策/事件）",
+  "Typical cases that count as a duplicate (you must fill in duplicateOfId):",
+  "- The same campaign on different platforms, or under brand abbreviations or different wording (e.g. the Chinese titles B站免费领7天大会员 and 哔哩哔哩为庆祝BLG夺冠赠送大会员, BLG夺冠送七天大会员)",
+  "- The same limited-time-free game/software covered by different sources, or in its Chinese and English versions",
+  "- The same macro/tech news rewritten by different media (e.g. CCTV, China News Service and BBC reporting the same policy/event)",
   "",
-  "严禁误判为重复（必须返回 duplicateOfId: null）：",
-  "- 同事件但奖品/利益点明显不同（如「BLG夺冠B站送大会员」vs「BLG夺冠LOLM手游送皮肤英雄」）",
-  "- 不同银行/合作商家/联名卡的各自活动（如「中国银行2233卡领B站会员」vs「B站全站送7天大会员」、或「阿里云送券」vs「腾讯云送券」）",
-  "- 不同的特价 VPS / 不同的开源项目 / 不同的单品商品",
+  "Never misjudge as duplicates (must return duplicateOfId: null):",
+  "- The same event but with clearly different prizes/perks (e.g. the Chinese titles BLG夺冠B站送大会员 vs BLG夺冠LOLM手游送皮肤英雄)",
+  "- Separate campaigns of different banks / partner merchants / co-branded cards (e.g. the Chinese titles 中国银行2233卡领B站会员 vs B站全站送7天大会员, or 阿里云送券 vs 腾讯云送券)",
+  "- Different deal-priced VPS / different open-source projects / different individual products",
   "",
-  '只输出 JSON 数组，每个元素形如 {"index":0,"duplicateOfId":12345,"reason":"同为B站BLG夺冠送大会员"}；若无重复则 duplicateOfId 为 null。不要输出任何多余文字。',
+  'Output only a JSON array whose elements look like {"index":0,"duplicateOfId":12345,"reason":"same Bilibili BLG championship membership giveaway"}; if there is no duplicate, duplicateOfId is null. Output no extra text.',
 ].join("\n");
 /**
- * AI 语义去重降级计数：模型不可用/超时/额度耗尽时，去重会静默退回纯规则，
- * 这里记录次数与最近一次原因，供「AI 审核」面板显示，避免误以为去重一直在生效。
+ * AI semantic dedup degradation counter: when the model is unavailable / times out / runs out of quota,
+ * dedup silently falls back to pure rules; this records the count and the most recent reason for the AI review panel to display, so it is not mistaken for dedup always being in effect.
  */
 const degradation = { count: 0, lastAt: null as string | null, lastReason: null as string | null };
 
@@ -53,7 +53,7 @@ function compactExcerpt(it: { summary?: string | null }, maxLen = 90): string {
   return txt.length <= maxLen ? txt : txt.slice(0, maxLen) + "…";
 }
 
-/** 查找聚类根节点，防止链式跳转与环路。 */
+/** Find the cluster root node, guarding against chained hops and cycles. */
 export function resolveClusterRoot(itemId: number): number {
   let cur = itemId;
   const visited = new Set<number>([cur]);
@@ -68,8 +68,8 @@ export function resolveClusterRoot(itemId: number): number {
 }
 
 /**
- * 将 itemId 与 targetId 归并到同一个 canonical_id 簇（根条目自身也写入 canonical_id = rootId，
- * 以便 SQL `PARTITION BY canonical_id` 一次命中整个簇）。
+ * Merge itemId and targetId into the same canonical_id cluster (the root item also writes canonical_id = rootId,
+ * so a single SQL `PARTITION BY canonical_id` hits the entire cluster).
  */
 export function linkCanonicalCluster(itemId: number, targetId: number): number {
   if (!Number.isFinite(itemId) || !Number.isFinite(targetId) || itemId === targetId) return itemId;
@@ -90,7 +90,7 @@ export function linkCanonicalCluster(itemId: number, targetId: number): number {
   return rootId;
 }
 
-/** 调用大模型对比 candidates 与 anchors，返回命中的重复条目映射（index -> match）。 */
+/** Call the LLM to compare candidates with anchors and return the map of matched duplicate entries (index -> match). */
 export async function findSemanticDuplicatesWithAi(
   candidates: DedupCandidate[],
   anchors: DedupCandidate[],
@@ -146,7 +146,7 @@ export async function findSemanticDuplicatesWithAi(
       signal: ac.signal,
     });
     if (!res.ok) {
-      throw new Error(`AI 去重 HTTP ${res.status} ${(await res.text()).slice(0, 100)}`);
+      throw new Error(`AI dedup HTTP ${res.status} ${(await res.text()).slice(0, 100)}`);
     }
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     const content = data.choices?.[0]?.message?.content ?? "";
@@ -164,16 +164,16 @@ export async function findSemanticDuplicatesWithAi(
       const cand = idx >= 0 && idx < candidates.length ? candidates[idx] : null;
       const dupId = typeof row?.duplicateOfId === "number" ? row.duplicateOfId : null;
       if (!cand || dupId == null || dupId === cand.id) continue;
-      // 仅接受真实存在且不是未来候选的基准 ID（anchors 或同一批中 index 更小的候选）
+      // Only accept anchor IDs that really exist and are not future candidates (anchors, or candidates with a smaller index in the same batch)
       const earlierCandidate = candidates.slice(0, idx).some((prev) => prev.id === dupId);
       if (!validAnchorIds.has(dupId) && !(candidateIds.has(dupId) && earlierCandidate)) continue;
-      const reason = typeof row?.reason === "string" ? row.reason.trim().slice(0, 60) : "AI 语义去重";
+      const reason = typeof row?.reason === "string" ? row.reason.trim().slice(0, 60) : "AI semantic dedup";
       out.set(idx, { index: idx, duplicateOfId: dupId, reason });
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     noteDegraded(msg);
-    console.log("[ai-dedup] 语义去重降级跳过:", msg);
+    console.log("[ai-dedup] semantic dedup degraded, skipping:", msg);
   } finally {
     clearTimeout(timer);
   }
@@ -181,7 +181,7 @@ export async function findSemanticDuplicatesWithAi(
 }
 
 /**
- * 审核后自动聚类：将新通过审核的条目与近 N 小时已有留存条目对比，写入 canonical_id 供列表与热点折迭。
+ * Auto-clustering after review: compare newly approved items with items retained in the last N hours and write canonical_id to feed list folding and hot-topic grouping.
  */
 export async function dedupeKeptItemsWithAi(
   itemIds: number[],
@@ -212,7 +212,7 @@ export async function dedupeKeptItemsWithAi(
   const cutoff = new Date(Date.now() - s.aiDedupWindowHours * 3_600_000).toISOString();
   let merged = 0;
 
-  // 按 kind 分组，减少无关跨频道比较
+  // Group by kind to reduce irrelevant cross-channel comparisons
   const byKind = new Map<string, DedupCandidate[]>();
   for (const r of rows) {
     const k = r.kind ?? "freebie";
@@ -230,7 +230,7 @@ export async function dedupeKeptItemsWithAi(
 
   for (const [kind, cands] of byKind) {
     const excludeSet = new Set(cands.map((c) => c.id));
-    // 只有 1-2 条时用 LLM 比对不划算（单次 2-3 秒），留给推送前的按需比对
+    // Comparing only 1-2 items with the LLM is not worth it (2-3s per call); leave those for the on-demand comparison before pushing
     if (cands.length < 3) continue;
     const anchorRows = all<{
       id: number;
@@ -270,9 +270,9 @@ export async function dedupeKeptItemsWithAi(
         if (!cand) continue;
         linkCanonicalCluster(cand.id, m.duplicateOfId);
         merged += 1;
-        console.log(`[ai-dedup] 聚类 #${cand.id} -> #${m.duplicateOfId}: ${m.reason}`);
+        console.log(`[ai-dedup] cluster #${cand.id} -> #${m.duplicateOfId}: ${m.reason}`);
       }
-      // 未被合并的本批代表也补充进后续分片基准池
+      // Representatives in this batch that were not merged are also added to the anchor pool for later chunks
       for (let j = 0; j < chunk.length; j += 1) {
         if (!matches.has(j) && anchors.length < 40) anchors.push(chunk[j]!);
       }
@@ -283,9 +283,9 @@ export async function dedupeKeptItemsWithAi(
 }
 
 /**
- * Telegram 推送前最终语义防重闸：
- * 1. 先零 Token 拦截与已推送条目共享 canonical_id 的候选；
- * 2. 若开启 AI 语义去重，再将剩余候选与近 N 小时已推送记录送大模型二次比对，命中即落库 canonical_id 并拦截推送。
+ * Final semantic anti-duplicate gate before Telegram push:
+ * 1. First, with zero tokens, intercept candidates that share a canonical_id with an already-pushed item;
+ * 2. If AI semantic dedup is enabled, send the remaining candidates together with the last N hours of pushed records to the LLM for a second comparison; on a hit, persist the canonical_id and intercept the push.
  */
 export async function filterPushDuplicatesWithAi<T extends DedupCandidate>(
   candidates: T[],
@@ -311,7 +311,7 @@ export async function filterPushDuplicatesWithAi<T extends DedupCandidate>(
   for (const c of candidates) {
     if (c.canonicalId != null && pushedCanonical.has(c.canonicalId)) {
       const targetId = pushedCanonical.get(c.canonicalId)!;
-      intercepted.push({ item: c, duplicateOfId: targetId, reason: "同聚类簇已推送过" });
+      intercepted.push({ item: c, duplicateOfId: targetId, reason: "same cluster already pushed" });
       continue;
     }
     afterRule.push(c);
@@ -335,11 +335,11 @@ export async function filterPushDuplicatesWithAi<T extends DedupCandidate>(
     if (hit) {
       if (persistLink) linkCanonicalCluster(item.id, hit.duplicateOfId);
       intercepted.push({ item, duplicateOfId: hit.duplicateOfId, reason: hit.reason });
-      console.log(`[push] AI 语义去重拦截 #${item.id}（与 #${hit.duplicateOfId} 重复）：${hit.reason}`);
+      console.log(`[push] AI semantic dedup intercepted #${item.id} (duplicate of #${hit.duplicateOfId}): ${hit.reason}`);
       continue;
     }
     if (item.canonicalId != null && keptCanonicalRoots.has(item.canonicalId)) {
-      intercepted.push({ item, duplicateOfId: item.canonicalId, reason: "同批同聚类重复" });
+      intercepted.push({ item, duplicateOfId: item.canonicalId, reason: "duplicate within the same batch and cluster" });
       continue;
     }
     if (item.canonicalId != null) keptCanonicalRoots.add(item.canonicalId);
@@ -349,7 +349,7 @@ export async function filterPushDuplicatesWithAi<T extends DedupCandidate>(
   return { kept, intercepted };
 }
 
-/** 一键对近 N 小时历史已留存条目跑一次 AI 去重聚类（同时折叠列表与防后续重复推送）。 */
+/** One-click AI dedup clustering over items retained in the last N hours (folds the list and prevents later duplicate pushes). */
 export async function runAiDedupBackfill(limit = 80): Promise<{
   scanned: number;
   merged: number;
@@ -358,7 +358,7 @@ export async function runAiDedupBackfill(limit = 80): Promise<{
 }> {
   const s = getAiSettings();
   if (!aiReady(s)) {
-    return { scanned: 0, merged: 0, clusters: 0, skippedReason: "AI 审核尚未配置或未开启" };
+    return { scanned: 0, merged: 0, clusters: 0, skippedReason: "AI review is not configured or not enabled" };
   }
   const cap = Math.min(Math.max(Math.round(limit) || 80, 10), 200);
   const cutoff = new Date(Date.now() - s.aiDedupWindowHours * 3_600_000).toISOString();

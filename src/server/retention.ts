@@ -1,27 +1,27 @@
 import { all, get, run } from "./db.ts";
 
 /**
- * 数据保留策略：站点跑久了 items 会无限增长（现在已 7000+），
- * 但真正有价值的只有最近一段时间内的福利，老数据既占空间又拖慢列表。
+ * Data retention policy: over time the items table grows without bound (7000+ now),
+ * but only recent giveaways really matter; old rows waste space and slow the list.
  *
- * 原则：
- *  - 收藏的永不删
- *  - AI 判定是福利的多留一段时间
- *  - 手动关闭（ignored）的尽快清掉
- *  - 推送日志、日报只留最近一段
+ * Rules:
+ *  - starred items are never deleted
+ *  - items AI judged to be giveaways are kept longer
+ *  - manually ignored items are purged soonest
+ *  - push logs and digests keep only a recent window
  */
 export type RetentionSettings = {
-  /** 普通条目保留天数：超过且非福利、非收藏的删掉 */
+  /** Retention days for ordinary items: expired rows that are neither giveaways nor starred */
   itemDays: number;
-  /** AI 判定是福利的条目保留天数（通常比普通条目长） */
+  /** Retention days for items AI judged to be giveaways (usually longer than ordinary ones) */
   keptDays: number;
-  /** 手动关闭（ignored）的保留天数 */
+  /** Retention days for manually ignored items */
   ignoredDays: number;
-  /** 推送日志保留天数 */
+  /** Retention days for push logs */
   pushLogDays: number;
-  /** 每日精选保留天数 */
+  /** Retention days for daily digests */
   digestDays: number;
-  /** 是否每天自动清理 */
+  /** Whether cleanup runs automatically every day */
   auto: boolean;
 };
 
@@ -85,7 +85,7 @@ export type CleanupReport = {
   at: string;
 };
 
-/** 执行一次清理，返回删了多少。dryRun 只统计不删。 */
+/** Run one cleanup pass and return how many rows were deleted. dryRun only counts, never deletes. */
 export function runCleanup(s?: RetentionSettings, dryRun = false): CleanupReport {
   const cfg = s ?? getRetention();
   const now = Date.now();
@@ -94,7 +94,7 @@ export function runCleanup(s?: RetentionSettings, dryRun = false): CleanupReport
 
   const plans: { label: string; sql: string; params: (string | number)[] }[] = [
     {
-      label: "过期非福利条目",
+      label: "expired non-giveaway items",
       sql: `DELETE FROM items
             WHERE starred = 0 AND NOT EXISTS (SELECT 1 FROM user_item_states uis WHERE uis.item_id = items.id AND uis.starred = 1)
               AND COALESCE(ai_keep, 0) != 1
@@ -102,7 +102,7 @@ export function runCleanup(s?: RetentionSettings, dryRun = false): CleanupReport
       params: [iso(cfg.itemDays)],
     },
     {
-      label: "过期福利条目",
+      label: "expired giveaway items",
       sql: `DELETE FROM items
             WHERE starred = 0 AND NOT EXISTS (SELECT 1 FROM user_item_states uis WHERE uis.item_id = items.id AND uis.starred = 1)
               AND COALESCE(ai_keep, 0) = 1
@@ -110,17 +110,17 @@ export function runCleanup(s?: RetentionSettings, dryRun = false): CleanupReport
       params: [iso(cfg.keptDays)],
     },
     {
-      label: "手动关闭的条目",
+      label: "manually ignored items",
       sql: `DELETE FROM items WHERE starred = 0 AND NOT EXISTS (SELECT 1 FROM user_item_states uis WHERE uis.item_id = items.id AND uis.starred = 1) AND status = 'ignored' AND COALESCE(published_at, first_seen_at) < ?`,
       params: [iso(cfg.ignoredDays)],
     },
     {
-      label: "推送日志",
+      label: "push log",
       sql: "DELETE FROM push_log WHERE created_at < ?",
       params: [iso(cfg.pushLogDays)],
     },
     {
-      label: "每日精选",
+      label: "daily digests",
       sql: "DELETE FROM digests WHERE created_at < ?",
       params: [iso(cfg.digestDays)],
     },
@@ -143,10 +143,10 @@ export function runCleanup(s?: RetentionSettings, dryRun = false): CleanupReport
   return { deleted, remaining, at: new Date().toISOString() };
 }
 
-/** 数据库体积（MB），用于判断清理是否必要。 */
+/** Database size in MB, used to decide whether a cleanup is needed. */
 export function dbSizeMb(path: string): number {
   try {
-    // 这里不在运行时读文件，交给调用方；保留占位避免引入 fs 依赖
+    // Not read from disk at runtime; the caller supplies it. Kept as a placeholder so no fs dependency is introduced
     return 0;
   } catch {
     return 0;

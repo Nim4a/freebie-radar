@@ -39,8 +39,8 @@ function parseJsonp(body: string, cb: string): { data?: { list?: CctvArticle[] }
 }
 
 /**
- * 央视新闻（news.cctv.com）公开栏目接口：
- * 支持时政要闻（news / china）、国际要闻（world）、财经（economy_zixun）、科技（tech）。
+ * CCTV News (news.cctv.com) public column API:
+ * supports top political news (news / china), international news (world), finance (economy_zixun) and technology (tech).
  */
 export const cctvCollector: Collector = {
   kind: "cctv",

@@ -32,7 +32,7 @@ const STORE_NAME: Record<string, string> = {
   "35": "DreamGame",
 };
 
-/** CheapShark 免费与史低白菜游戏 API（免登录、JSON，覆盖 Steam/Epic/GOG/Fanatical/Humble 等）。 */
+/** CheapShark free and all-time-low bargain game API (no login, JSON, covers Steam/Epic/GOG/Fanatical/Humble and more). */
 export const cheapsharkCollector: Collector = {
   kind: "cheapshark",
   label: "CheapShark 游戏免费与史低",

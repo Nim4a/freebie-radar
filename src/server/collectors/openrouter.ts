@@ -10,9 +10,9 @@ type OpenRouterModel = {
 };
 
 /**
- * OpenRouter 免费大模型实时上新探测：
- * 只取近期上线（默认 14 天内）且 prompt/completion 均为 0 的免费模型，
- * 避免一次性导入全量历史免费模型。
+ * OpenRouter free-LLM new-arrival probe:
+ * takes only models that went live recently (default within 14 days) with both prompt and completion priced at 0,
+ * avoiding a one-off import of every free model in history.
  */
 export const openrouterCollector: Collector = {
   kind: "openrouter",

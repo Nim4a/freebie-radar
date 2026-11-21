@@ -44,7 +44,7 @@ export function limitUserAction(c: Context, userId: number, action: string, limi
   const wait = limiter.take(`user:${userId}:${action}`, limit, windowMs);
   if (!wait) return null;
   c.header("Retry-After", String(wait));
-  return c.json({ error: `操作过于频繁，请 ${wait} 秒后重试`, retryAfter: wait }, 429);
+  return c.json({ error: `Too many actions; retry in ${wait} seconds`, retryAfter: wait }, 429);
 }
 
 const installed = new WeakSet<Hono>();
@@ -82,22 +82,22 @@ export function registerSecurity(app: Hono): void {
         allowed.add("http://127.0.0.1:5173");
       }
       if ((origin && !allowed.has(origin)) || (!origin && site === "cross-site")) {
-        return c.json({ error: "不允许跨站写操作" }, 403);
+        return c.json({ error: "cross-site writes are not allowed" }, 403);
       }
     }
     const query = c.req.query();
     if (c.req.url.length > 8192 || Object.values(query).some((v) => v.length > 1000)) {
-      return c.json({ error: "查询参数过长" }, 400);
+      return c.json({ error: "query parameters too long" }, 400);
     }
     for (const name of ["limit", "offset", "hours", "maxAgeDays", "minScore", "maxPrice"]) {
       const value = query[name];
       if (value !== undefined && (!value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 1_000_000)) {
-        return c.json({ error: `${name} 必须是有效的非负数` }, 400);
+        return c.json({ error: `${name} must be a valid non-negative number` }, 400);
       }
     }
     const itemId = path.match(/^\/api\/(?:items|me\/items)\/([^/]+)/)?.[1];
     if (itemId && !["batch", "import-guest"].includes(itemId) && (!/^\d+$/.test(itemId) || !Number.isSafeInteger(Number(itemId)) || Number(itemId) < 1)) {
-      return c.json({ error: "条目 ID 无效" }, 400);
+      return c.json({ error: "invalid item ID" }, 400);
     }
     if (config.rateLimitEnabled && path !== "/health") {
       const ip = clientAddress(c);
@@ -108,19 +108,19 @@ export function registerSecurity(app: Hono): void {
       const wait = limiter.take(`${ip}:${bucket}`, max, 60_000);
       if (wait) {
         c.header("Retry-After", String(wait));
-        return c.json({ error: "请求过于频繁，请稍后重试", retryAfter: wait }, 429);
+        return c.json({ error: "too many requests; retry later", retryAfter: wait }, 429);
       }
     }
     return next();
   });
   let inFlight = 0;
   app.use("/api/*", async (c, next) => {
-    if (inFlight >= 16) { c.header("Retry-After", "5"); return c.json({ error: "服务繁忙，请稍后重试" }, 429); }
+    if (inFlight >= 16) { c.header("Retry-After", "5"); return c.json({ error: "service busy; retry later" }, 429); }
     inFlight += 1;
     try { await next(); } finally { inFlight -= 1; }
   });
   // Admission happens before buffering, so slow uploads cannot allocate unbounded bodies.
-  app.use("*", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: (c) => c.json({ error: "请求体超过 2 MB 上限" }, 413) }));
+  app.use("*", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: (c) => c.json({ error: "request body exceeds the 2 MB limit" }, 413) }));
 }
 
 /** Anonymous JSON only. Never share cookie/Bearer responses; bound both keys and bytes. */

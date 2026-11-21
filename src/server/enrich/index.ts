@@ -16,19 +16,19 @@ export { CATEGORY_LABEL, isCategory };
 
 type Rule = { category: Category; weight: number; keywords: string[]; exclude?: RegExp; require?: RegExp };
 
-/** 线下场景词：出现这些才可能是「实地」，光有「免费」不算 */
+/** Offline-scene words: only a hit here can make it a real-world event; "free" alone is not enough */
 const OFFLINE_SCENE_RE =
   /现场|到店|进店|门店|实体店|快闪|商场|专柜|自提|打卡|试吃|试饮|派样|派发|店庆|开业|线下|凭手机|凭截图|排队领|附近|博会|展会|展览|市集|集市|庙会|漫展|车展/;
-/** 领取动作：必须能真的领到东西，否则只是地点词撞上了 */
+/** Claim actions: something must actually be claimable, otherwise it is just a place word that collides */
 const OFFLINE_CLAIM_RE =
   /(?:免费领取|免费领|现场领|领取|免费送|免费赠|赠送|白送|白给|0元|零元|一分钱|打卡[^\s]{0,4}(?:送|领)|试吃|试饮|派样|派发|小样|礼品|手幅|周边)/;
-/** 资讯/求助/闲聊：命中就不该当实物福利 */
+/** News / help requests / chit-chat: a hit means it should not be treated as a physical freebie */
 const OFFLINE_EXCLUDE_RE =
   /记者|直播|直击|发布会|峰会|论坛|通报|白皮书|签署|备忘录|抽检|不合格|检测结果|召回|处罚|罚款|我想|有吗|有没有人|求租|转租|合租/;
-/** 实物/生活福利：线上免费领也算「实物福利」，不再要求到店 */
+/** Physical / everyday freebies: claiming online also counts as a "physical freebie", no longer requiring a store visit */
 const PHYSICAL_RE =
   /实物|食品|零食|饮料|奶茶|咖啡|薯条|汉堡|炸鸡|披萨|餐|水果|生鲜|纸巾|日用品|洗护|小样|试用装|周边|手幅|徽章|玩偶|礼品|礼盒|礼包|书|教材|电子书|体检|话费|流量|红包|立减金|代金券|优惠券|充值卡|京豆|积分兑|会员|月卡|季卡|年卡|羊毛|现金|余额|\d+\s*(?:元|块|r)\b/;
-/** 测评/选购/资讯：goods 分类里命中这些就不是优惠也不是福利 */
+/** Reviews / buying advice / news: a hit inside the goods category is neither a deal nor a freebie */
 const GOODS_EDITORIAL_RE =
   /测评|评测|实测|使用记录|使用体验|使用感受|选购|怎么选|如何选|科普|榜单|排行|对比|值不值|开箱|避坑|踩雷|横评|盘点|攻略|差价|降价|涨价|调价|假货|验真|备案|增项|单价|差在哪|先分清|先查|别硬熬|被点名|一衣难求|成本|赚几|只能升不能降|降档墙|降到|便宜|放心买|能买吗|该不该|划不划算|值得吗|买前/;
 
@@ -54,7 +54,7 @@ const RULES: Rule[] = [
     keywords: ["域名", "domain", "ssl", "证书", "dns", "主机", "虚拟主机", "建站", "托管"],
   },
   {
-    // 只认强信号：明确提到开源、GitHub、自托管才算，避免「工具」「插件」这类泛词抢走其它分类
+    // Only strong signals count: an explicit mention of open source, GitHub or self-hosting, so generic words like "tool" or "plugin" cannot steal other categories
     category: "opensource",
     weight: 1.0,
     keywords: ["开源", "open source", "opensource", "github.com", "github 仓库", "github项目", "gitlab", "self-host", "selfhosted", "自托管", "自建服务", "awesome-", "mit 协议", "apache 协议", "gpl", "源码", "pull request", "开源项目", "开源软件", "开源工具", "开源库"],
@@ -135,16 +135,16 @@ const RULES: Rule[] = [
     keywords: ["新闻", "快讯", "要闻", "播报", "周刊", "日报", "changelog", "release notes"],
   },
   {
-    // 实物福利：线下门店/快闪/商场现场领取的实物，和线上羊毛分开，避免被「实物/优惠」吞掉
+    // Physical freebies: items claimed in person at offline stores / pop-ups / malls, kept separate from online freebies so the "physical / discount" bucket does not swallow them
     category: "offline",
     weight: 1.2,
     keywords: [
       "现场领取", "现场可领", "现场免费", "现场送", "到店", "进店", "门店", "实体店", "快闪", "商场", "专柜", "自提",
       "打卡", "试吃", "试饮", "派样", "派发", "店庆", "开业活动", "新店开业", "附近", "线下", "凭手机", "凭截图领取", "排队领",
     ],
-    // 光有「附近/线下/现场」这类地点词不够：必须同时出现「领取动作」，否则闲聊帖、行业资讯全被吸进来
+    // Place words like "nearby / offline / on site" are not enough on their own: a "claim action" must appear as well, otherwise chit-chat and industry news all get pulled in
     require: OFFLINE_CLAIM_RE,
-    // 新闻/发布会里的「现场」不是实物福利；抽检通报、租房求组队这类也不是
+    // "On site" in a news item or launch event is not a physical freebie; inspection notices or roommate-wanted posts are not either
     exclude: OFFLINE_EXCLUDE_RE,
   },
   {
@@ -158,13 +158,13 @@ const RULES: Rule[] = [
     keywords: ["邀请码", "邀请链接", "注册码", "开放注册", "注册送", "新用户", "内测", "资格", "名额"],
   },
   {
-    // 网盘资源：强调「网盘/云盘/资源合集」本体，避免与影音会员、云服务混在一起
+    // Cloud-drive resources: emphasises the "drive / cloud storage / resource collection" itself, so it does not blend into media memberships or cloud services
     category: "pan",
     weight: 0.95,
     keywords: ["网盘", "云盘", "夸克网盘", "阿里云盘", "百度网盘", "百度云", "天翼云盘", "115网盘", "迅雷网盘", "uc网盘", "资源合集", "资源分享", "网盘资源", "不限速", "转存", "提取码", "分享链接"],
   },
   {
-    // 网课/教程：课程内容本体；部署/安装类技术教程仍归 dev
+    // Courses / tutorials: the course content itself; deployment and installation tutorials still belong to dev
     category: "course",
     weight: 1.0,
     keywords: ["网课", "课程", "公开课", "训练营", "视频教程", "系列教程", "教学视频", "配套课件", "课件", "讲义", "mooc", "udemy", "coursera", "极客时间", "拉钩", "慕课"],
@@ -242,7 +242,7 @@ export type EnrichedItem = RawItem & {
   codes: string[];
   price: number | null;
   isFree: boolean;
-  /** 规则内容分（scoreItem 的原始结果），综合分由它 + AI 质量分重算 */
+  /** Rule content score (scoreItem's raw result); the combined score is recomputed from it plus the AI quality score */
   baseScore: number;
   score: number;
   url: string;
@@ -284,23 +284,23 @@ export function classify(
   return { category: best.category, tags };
 }
 /**
- * 实物福利的完整口径：先得是福利（kind=freebie），再得是实地（线下场景 + 领取动作 + 中文文本）。
- * AI 会把美国的线上促销/到店好价也标成 offline，所以规则结果和 AI 输出都要过这道闸。
+ * Full definition of a physical freebie: it must first be a freebie (kind=freebie) and then be on-site (offline scene + claim action + Chinese text).
+ * The AI also labels US online promos and in-store deals as offline, so both the rule result and the AI output must pass this gate.
  */
 export function isOfflineWorthy(title: string, summary: string, kind: string | null): boolean {
   if (kind !== "freebie") return false;
   const text = `${title} ${summary}`;
   if (!OFFLINE_CLAIM_RE.test(text)) return false;
   if (OFFLINE_EXCLUDE_RE.test(text)) return false;
-  // 全英文的海外本地促销对中文站没有意义
+  // All-English overseas local promos mean nothing to a Chinese-language site
   if ((text.match(/[\u4e00-\u9fff]/g) ?? []).length < 2) return false;
-  // ① 线下到店领取（原有口径）② 线上免费领实物/生活福利（新增口径）
+  // 1 claim in person at an offline store (original scope) 2 claim a physical / everyday freebie online (new scope)
   return OFFLINE_SCENE_RE.test(text) || PHYSICAL_RE.test(text);
 }
 
 /**
- * 统一收口：任何来源（规则 / AI 审核 / 重分类）把条目标成 offline 时都过一遍 isOfflineWorthy，
- * 不合格就退回 fallback（默认兜底分类）。
+ * Single funnel: any source (rules / AI review / reclassification) that marks an item offline must pass isOfflineWorthy,
+ * and anything that fails falls back to fallback (the default category).
  */
 export function demoteOfflineCategory(
   category: string | null,
@@ -315,10 +315,10 @@ export function demoteOfflineCategory(
 }
 
 /**
- * 商品分类里的「测评 / 使用记录 / 选购科普 / 榜单」不是优惠也不是福利。
- * AI 常把「什么值得买」的测评文判成 goods+freebie，于是它们混进「真福利」「好价」频道
- * （频道按 category 筛，不看 kind）。没有价格、没有促销、没有领取证据时降到 tech，
- * 只留在「行业资讯」频道。
+ * "Reviews / usage logs / buying guides / rankings" inside the goods category are neither a deal nor a freebie.
+ * The AI often labels SMZDM reviews as goods+freebie, so they leak into the "real freebies" and "deals" channels
+ * (channels filter by category and ignore kind). With no price, no promo and no claim evidence it drops to tech,
+ * keeping it only in the "industry news" channel.
  */
 export function demoteEditorialGoods(
   category: string | null,
@@ -327,42 +327,42 @@ export function demoteEditorialGoods(
 ): string | null {
   if (category !== "goods") return category;
   if (kind === "noise" || kind === "news") return category;
-  // 测评 / 选购 / 价格资讯：既不是优惠也不是福利
+  // Reviews / buying advice / price news: neither a deal nor a freebie
   if (GOODS_EDITORIAL_RE.test(input.title)) return "tech";
   const text = `${input.title} ${input.summary ?? ""}`;
   const signals = contentSignals(input.title, input.summary ?? "");
   const paidish = input.obtain === "paid" || (typeof input.price === "number" && input.price > 0);
-  // 免费领实物/生活福利 → 实物福利（offline）大类
+  // Free physical / everyday items -> physical freebie (offline) category
   if (kind === "freebie" && signals.claim && PHYSICAL_RE.test(text)) return "offline";
-  // 有价格或有促销 → 保留 goods（优惠）
+  // Price or promo present -> keep goods (deal)
   if (paidish || signals.promotion) return category;
-  // 无价格、无促销、无领取证据 → 测评/资讯
+  // No price, no promo, no claim evidence -> review / news
   return "tech";
 }
 
-/** 资讯类分类：这些分类的内容是报道，不可能是「白拿福利」，AI 判成 freebie 一律降级为 info。 */
+/** News categories: content here is reportage and can never be a "free giveaway", so an AI freebie verdict is always downgraded to info. */
 const EDITORIAL_CATEGORIES = new Set(["headline", "world", "finance", "stock", "news"]);
 
 /**
- * 中性分类：这些分类本身不代表「有东西可领」。AI 把它们判成 freebie 时，标题里必须有领取证据，
- * 否则「买东西更划算」这类消费测评/比价文会混进真福利频道
- * （如「茅台告别抢购后，宴席、送礼买酒比以前更划算吗？」被判 freebie + tech + 74 分）。
+ * Neutral categories: the category itself does not imply "there is something to claim". When the AI labels them freebie, the title must contain claim evidence,
+ * otherwise consumer reviews and price-comparison posts like "buying this is cheaper" leak into the real-freebie channel
+ * e.g. the "after Moutai ended its queueing, is buying for banquets and gifts cheaper than before?" post was labelled freebie + tech + 74 points).
  */
 const CLAIM_NEEDED_CATEGORIES = new Set(["tech", "hardware", "other", "headline", "world", "finance", "stock", "news"]);
 
-/** contentSignals().claim 没覆盖、但标题里一样算「真有东西可领」的说法。 */
+/** Phrasings that contentSignals().claim does not cover but that still mean "something is really claimable" in the title. */
 const TITLE_CLAIM_RE = /免费|可领|能领|领了|到账|\b(?:free|giveaway|coupon)\b/i;
 
-/** 价格/行情话术：正文出现它，说明讲的是「买得值不值/更划算」，不是「白拿」。 */
+/** Price / market-talk wording: if it appears in the body, the post is about "is it worth buying / is it cheaper", not about "getting it free". */
 const PRICE_TALK_RE =
   /\d+(?:\.\d+)?\s*(?:元|块|美元)|[¥￥$]\s*\d|价格|标价|售价|定价|行情|差价|涨价|降价|跌价|调价|折扣|几折|划算|性价比|成本|省下|省钱|赚几|降到|跌到/;
 
-/** 抽奖：免费参与但不确定能拿到，obtain 记 lottery，不进「真福利」。Giveaway 不算（Steam/Epic 送游戏常用它）。 */
+/** Lottery: free to enter but winning is not certain, so obtain is recorded as lottery and it stays out of "real freebies". Giveaway does not count (Steam/Epic game giveaways use it all the time). */
 const LOTTERY_TITLE_RE = /sweepstakes|\bwinners?\b|抽奖|抽选|抽签|摇号|赢取/i;
-/** 明确标价的不是白嫖：「Only $9.99」「仅售」「到手价」。 */
+/** An explicit price is not a freebie: "Only $9.99", "selling for", "final price". */
 const PRICED_TITLE_RE = /only\s*\$|仅售|到手价|售价\s*[$￥¥]?\s*\d|现价\s*[$￥¥]?\s*\d/i;
 
-/** 证据校验要用到的正文信息：摘要、兑换码、来源（纯白嫖源免检）。 */
+/** Body fields the evidence check needs: summary, redemption codes, source (pure-freebie sources are exempt). */
 export type FreebieEvidenceExtra = {
   summary?: string | null;
   codes?: readonly string[] | null;
@@ -370,13 +370,13 @@ export type FreebieEvidenceExtra = {
 };
 
 /**
- * 白嫖证据校验（只做否定，不做确认）：
- * - 抽奖类：免费参与但结果不确定 → obtain=lottery，从「真福利」频道排除
- * - 明确标价：不是白嫖 → kind 降为 deal
- * - 资讯类分类：报道不可能有东西可领 → kind 降为 info
- * - 中性分类 + 无领取证据 + 通篇价格话术：「更划算」不是白嫖 → kind 降为 info
- * 不判断「是不是福利」，只排除「肯定不是确定福利」的情形。
- * 返回的 obtain 语义：undefined = 没意见（沿用调用方的值），null = 明确清空，字符串 = 改写。
+ * Freebie evidence check (reject-only, never confirms):
+ * - Lottery: free to enter but an uncertain outcome -> obtain=lottery, excluded from the real-freebie channel
+ * - Explicitly priced: not a freebie -> kind drops to deal
+ * - News category: reportage cannot have anything claimable -> kind drops to info
+ * - Neutral category + no claim evidence + price talk throughout: "cheaper" is not a freebie -> kind drops to info
+ * It does not decide "is this a freebie"; it only rules out cases that are certainly not a confirmed freebie.
+ * Returned obtain semantics: undefined = no opinion (keep the caller's value), null = explicitly clear it, a string = overwrite.
  */
 export function enforceFreebieEvidence(
   kind: ContentKind,
@@ -390,14 +390,14 @@ export function enforceFreebieEvidence(
   if (PRICED_TITLE_RE.test(title)) {
     return { kind: "deal", obtain: obtain === "free" || !obtain ? "paid" : obtain, category };
   }
-  // 资讯类分类下不可能有「白拿福利」：AI 偶尔把民生新政、行业新闻判成 freebie
-  // （如「新能源车险条款过审，你的保费开始按车型连坐」被判 freebie + 82 分进真福利频道）。
-  // 分类已经明确是资讯，kind 就不能是 freebie。
+  // A news category cannot contain a "free giveaway": the AI occasionally labels new civilian policies or industry news as freebie
+  // e.g. the "new EV insurance clause passed, your premium now follows your car model" post was labelled freebie + 82 and entered the real-freebie channel).
+  // Once the category is clearly news, the kind cannot be freebie.
   if (category && EDITORIAL_CATEGORIES.has(category)) {
     return { kind: "info", obtain: null, category };
   }
-  // 中性分类里的消费测评/比价长文：标题没有领取证据、正文全是价格行情 → 不是白嫖。
-  // 纯免费源（Epic/喜加一等）本身就保证有免费对象，免检。
+  // Consumer reviews and long price-comparison posts in a neutral category: no claim evidence in the title, nothing but price talk in the body -> not a freebie.
+  // Pure-freebie sources (Epic game giveaways, the "xi jia yi" freebie lists, ...) guarantee a free object by definition, so they are exempt.
   if (
     category &&
     CLAIM_NEEDED_CATEGORIES.has(category) &&
@@ -420,7 +420,7 @@ function ageDays(iso: string | null): number {
   return (Date.now() - t) / 86_400_000;
 }
 
-/** 纯免费/喜加一专用源（标题有时省略 "Free" 字样，如 r/FreeGameFindings）。 */
+/** Dedicated pure-freebie / game-giveaway sources (titles sometimes omit "Free", e.g. r/FreeGameFindings). */
 export const FREEBIE_ONLY_SOURCES = new Set([
   "epic-free",
   "steam-free",
@@ -459,84 +459,84 @@ export function scoreItem(input: {
 
   if (input.isFree) {
     score += 15;
-    notes.push("完全免费");
+    notes.push("completely free");
   } else if (input.price !== null && input.price !== undefined) {
     if (input.price <= 5) {
       score += 8;
-      notes.push("低价 ≤5元");
+      notes.push("low price ≤5 CNY");
     } else if (input.price > 30 && input.kind !== "deal") {
       score -= 10;
-      notes.push("需实付 >30元");
+      notes.push("pay-in-full >30 CNY");
     }
   } else if (FREEBIE_ONLY_SOURCES.has(input.sourceId)) {
     score += 12;
-    notes.push("白嫖专源");
+    notes.push("pure-freebie source");
   }
 
   if (input.codes?.length) {
     score += 12;
-    notes.push("含兑换码");
+    notes.push("contains redemption code");
   }
 
   const dealHits = DEAL_WORDS.filter((w) => matchKeyword(text, w));
   if (dealHits.length) {
     const add = dealHits.length >= 2 ? 14 : 10;
     score += add;
-    notes.push(`福利词 ×${dealHits.length}`);
+    notes.push(`freebie words ×${dealHits.length}`);
   } else if (input.kind === "deal" && PROMO_HINT.test(text)) {
     score += 10;
-    notes.push("特惠信号");
+    notes.push("discount signal");
   } else if (input.kind === "opensource" && (input.category === "opensource" || OPENSOURCE_HINT.test(text))) {
     score += 10;
-    notes.push("开源项目");
+    notes.push("open-source project");
   } else if (input.kind === "news" || input.kind === "info") {
     if (OPENSOURCE_HINT.test(text)) {
       score += 8;
-      notes.push("实用指南");
+      notes.push("practical guide");
     } else {
       score += 4;
-      notes.push(input.kind === "news" ? "重要新闻" : "行业资讯");
+      notes.push(input.kind === "news" ? "important news" : "industry news");
     }
   } else {
     score -= 8;
-    notes.push("无福利词");
+    notes.push("no freebie words");
   }
 
   const scarcity = SCARCITY_WORDS.filter((w) => matchKeyword(text, w));
   if (scarcity.length) {
     score += scarcity.length >= 2 ? 8 : 5;
-    notes.push(`稀缺 ×${scarcity.length}`);
+    notes.push(`scarcity ×${scarcity.length}`);
   }
 
   if (NOISE_PATTERNS.some((p) => p.test(input.title))) {
     score -= 18;
-    notes.push("疑问/求资源");
+    notes.push("question/resource request");
   }
 
   const days = ageDays(input.publishedAt);
   if (input.publishedAt) {
     if (days <= 1) {
       score += 16;
-      notes.push("24h 内");
+      notes.push("within 24h");
     } else if (days <= 3) {
       score += 11;
-      notes.push("3 天内");
+      notes.push("within 3 days");
     } else if (days <= 7) {
       score += 6;
-      notes.push("一周内");
+      notes.push("within a week");
     } else if (days > 45) {
       score -= 12;
-      notes.push("陈旧");
+      notes.push("stale");
     }
   }
 
   if (input.expiresAt) {
     const left = (new Date(input.expiresAt).getTime() - Date.now()) / 86_400_000;
     if (left < 0) {
-      return { score: 0, reason: [...notes, "已过期"].join(" · ") };
+      return { score: 0, reason: [...notes, "expired"].join(" · ") };
     } else if (left <= 3) {
       score += 6;
-      notes.push("临近截止");
+      notes.push("closing soon");
     }
   }
 
@@ -544,7 +544,7 @@ export function scoreItem(input: {
 
   if (input.title.length < 6) {
     score -= 10;
-    notes.push("标题过短");
+    notes.push("title too short");
   }
 
   return { score: Math.max(0, Math.min(100, Math.round(score))), reason: notes.join(" · ") };
@@ -584,7 +584,7 @@ export function enrichItem(
     guardEnabled: hints?.guardEnabled,
   };
   let kind = guessKind(kindInput);
-  // 实物福利必须是「能到店领到的实物福利」：好价（deal）和只撞上地点词的资讯/闲聊一律退回
+  // A physical freebie must be one "claimable at a store": deals and news / chit-chat that merely collide with a place word are all pushed back
   if (category === "offline" && !isOfflineWorthy(title, summary, kind)) {
     const again = classify(title, summary, { excludeCategories: ["offline"] });
     category =

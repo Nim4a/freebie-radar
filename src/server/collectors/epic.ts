@@ -24,7 +24,7 @@ function slugOf(e: Element): string {
   return raw.replace(/\/home$/, "");
 }
 
-/** Epic 官方免费游戏接口，能准确拿到「本周免费」与「即将免费」的起止时间。 */
+/** Epic official free-games API, which gives accurate start and end times for「本周免费」(free this week) and「即将免费」(free soon). */
 export const epicCollector: Collector = {
   kind: "epic",
   label: "Epic Games 喜加一",
@@ -59,7 +59,7 @@ export const epicCollector: Collector = {
         : [];
 
       if (!current.length && !upcoming.length) continue;
-      // 跳过原本就永久免费（原价 0）的游戏，如常驻免费网游
+      // skip games that were already permanently free (original price 0), such as always-free online games
       const origNum = e.price?.totalPrice?.originalPrice;
       if (typeof origNum === "number" && origNum === 0) continue;
       const slug = slugOf(e);

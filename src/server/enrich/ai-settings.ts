@@ -13,98 +13,98 @@ import { CLASSIFICATION_PROMPT } from "./evidence.ts";
 export type AiVerdict = {
   index: number;
   keep: boolean;
-  /** 内容形态：freebie=白嫖福利 | deal=特价好价 | opensource=开源项目 | info=实用指南 | noise=噪音 */
+  /** Content kind: freebie=free stuff | deal=deal/discount | opensource=open-source project | info=practical guide | noise=noise */
   kind?: ContentKind;
   category: string;
   reason: string;
-  /** 获取方式：AI 判断；缺失时由规则兜底 */
+  /** Obtain mode: decided by AI; falls back to rules when missing */
   obtain?: ObtainMode;
-  /** 1-5 分质量评估：5=高价值必看/必抢，4=明确好内容，3=普通，2=鸡肋，1=噪音 */
+  /** 1-5 quality score: 5=high-value must-see/must-grab, 4=clearly good, 3=average, 2=marginal, 1=noise */
   quality?: number;
 };
 
 export type AiSourceMode = "all" | "exclude" | "only";
 
 export type AiSettings = {
-  /** 总开关：关掉后采集不再自动送审 */
+  /** Master switch: when off, collection no longer auto-submits for review */
   enabled: boolean;
-  /** OpenAI 兼容端点，带 /v1 */
+  /** OpenAI-compatible endpoint, including /v1 */
   baseUrl: string;
-  /** 密钥；界面只显示末四位 */
+  /** API key; the UI only shows the last four characters */
   apiKey: string;
-  /** 模型名 */
+  /** Model name */
   model: string;
-  /** 每轮最多送审多少条（20-500） */
+  /** Max items submitted per round (20-500) */
   maxItems: number;
-  /** 每批发送条数（2-20，默认 6） */
+  /** Items per batch (2-20, default 6) */
   batchSize: number;
-  /** 并发批数（1-8，默认 4） */
+  /** Concurrent batches (1-8, default 4) */
   concurrency: number;
-  /** 单批请求超时秒数（5-60，默认 15） */
+  /** Per-batch request timeout in seconds (5-60, default 15) */
   timeoutSec: number;
-  /** 第一道规则初筛开关：开启后自动跳过求助/问价/版本更新等硬噪音，不浪费 AI 额度 */
+  /** First-pass rule pre-filter: when on, skips hard noise such as help requests / price questions / version-update notes so AI quota is not wasted */
   preFilterEnabled: boolean;
-  /** 用户自定义入口拦截关键词：命中直接跳过送审且不主动直推 */
+  /** User-defined entry block keywords: a match skips review and is not pushed directly */
   customNoiseKeywords: string[];
-  /** 纯白嫖专源（Epic/Steam/GamerPower 等）免送 AI，直接视作真福利 */
+  /** Freebie-only sources (Epic/Steam/GamerPower, etc.) skip AI review and are treated as genuine freebies */
   skipFreebieSources: boolean;
-  /** 送审数据源范围：all 全部 / exclude 排除指定源 / only 仅审指定源 */
+  /** Review source scope: all = everything / exclude = exclude the listed sources / only = review only the listed sources */
   sourceMode: AiSourceMode;
-  /** 配合 sourceMode 使用的数据源 ID 列表 */
+  /** Source ID list used together with sourceMode */
   sourceIds: string[];
-  /** 补充审核规则（追加在系统默认口径后，不破坏 JSON 输出要求） */
+  /** Supplementary review rules (appended after the built-in default rubric without breaking the JSON output requirement) */
   extraPrompt: string;
-  /** 高级：完全自定义主提示词；留空用内置默认 */
+  /** Advanced: fully custom main prompt; leave blank to use the built-in default */
   systemPrompt: string;
-  /** true = 自动从用户收藏（正例）与手动关闭（负例）学习偏好 */
+  /** true = automatically learn preferences from user stars (positive) and manual dismissals (negative) */
   learnFromFeedback: boolean;
-  /** 正负样本各抽取最近几条（1-15，默认 6） */
+  /** How many most recent samples to draw from each of the positive/negative sets (1-15, default 6) */
   feedbackLimit: number;
-  /** 是否启用 AI 语义去重（审核入库后 & Telegram 推送前防重复） */
+  /** Whether to enable AI semantic dedup (prevents duplicates after review insert and before Telegram push) */
   aiDedupEnabled: boolean;
-  /** AI 语义去重对比窗口（小时，6-168，默认 48） */
+  /** AI semantic dedup comparison window in hours (6-168, default 48) */
   aiDedupWindowHours: number;
 };
 
 const SETTINGS_KEY = "ai";
 const DEFAULT_MAX_ITEMS = 60;
 
-/** 分类清单与说明由 shared/taxonomy.ts 生成，加分类不用再改提示词 */
-const CATEGORY_PROMPT_LINE = `分类 category 只能是：${CATEGORY_KEYS.join(" | ")}`;
-const CATEGORY_DESC_LINE = `细分类参考：${CATEGORY_KEYS.map((k) => `${k}=${CATEGORY_DESC[k]}`).join("；")}。`;
+/** Category list and descriptions are generated from shared/taxonomy.ts, so adding categories needs no prompt edits */
+const CATEGORY_PROMPT_LINE = `The category field can only be one of: ${CATEGORY_KEYS.join(" | ")}`;
+const CATEGORY_DESC_LINE = `Subcategory reference: ${CATEGORY_KEYS.map((k) => `${k}=${CATEGORY_DESC[k]}`).join(";")}.`;
 const DEFAULT_PROMPT = [
-  "你是多主题社区与「资源雷达」的内容审核与打标员。任务是过滤低信噪比水帖，并把有价值的内容准确归类到「白嫖福利 / 特价好价 / 开源项目 / 重要新闻 / 行业资讯」，不要把开源项目、黑五特价、合规拼车或高价值重大新闻/经济股票科技资讯误杀成噪音。",
+  "You are the content moderator and tagger for multi-topic communities and the Resource Radar. Your task is to filter out low signal-to-noise filler posts and accurately classify valuable content into free stuff / deals / open-source projects / important news / industry news; do not misclassify open-source projects, Black Friday deals, compliant carpool arrangements, or high-value major news / economic, stock and tech information as noise.",
   "",
-  "判 keep=true 的五类有效内容（同时标清 kind）：",
-  "1. freebie（白嫖福利）：限免游戏/正版软件授权、兑换码/CDK/公益额度/送 Token、免费云主机/域名/GPU/算力/学生包、可照做领到手的白嫖攻略、OpenRouter 新上线 :free 免费模型。",
-  "   反例：测评、使用记录、使用感受、选购科普、榜单推荐、横评、抄作业清单都不是 freebie（没有可领取的对象），应标 kind=info；只有真能领到/免费拿到的东西才是 freebie。",
-  "2. deal（特价好价/拼车/出鸡）：明确的高性价比付费促销、史低折扣（如黑五/周年庆特价 VPS、年付小鸡、Steam 史低、正版软件买断大促），以及明确标价发车的合规拼车合租（如 ChatGPT/Claude/Netflix 家庭组车位）或明确标价出鸡/转让帖。不要因为需要付钱就拦掉好价与发车。",
-  "   硬约束：标题出现「N出 / 溢价N出 / 出 / 收 / 转让 / 过户 / 出号 / 车位 / 合租 / 拼团 / 独享车」等交易意图词，且带价格或付费方式时，kind 必须是 deal，不得判 info（「50出zouter」= 50 元转让 zouter，是 deal 不是资讯）。",
-  "3. opensource（开源项目）：必须有明确的 GitHub/GitLab 仓库、源码或可部署的自托管工具、MCP/Agent/Docker 项目发布或推荐。纯科技新闻（无开源仓库/源码发布）不得标为 opensource。",
-  "4. news（重要新闻）：仅限央视新闻/中新网/BBC/德国之声等权威新闻媒体的时政要闻、国家政策法规、国务院/部委公告、国际局势、外交峰会与重大民生要闻。来自什么值得买/IT之家/社区的消费导购、电商/品牌八卦或数码资讯不得标为 news（应标 deal 或 info）。",
-  "5. info（行业资讯）：经济金融宏观、股票/基金/IPO/财报市场动态、科技大厂/芯片/AI 前沿新闻、硬件数码评测与开发者技术周刊/深度指南。",
+  "Five kinds of valid content get keep=true (also set kind clearly):",
+  "1. freebie (free stuff): limited-time free games / genuine software licenses, redemption codes/CDKs/public-benefit credits/free tokens, free cloud hosts/domains/GPUs/compute/student packs, freebie guides you can actually follow to claim, and newly launched OpenRouter :free models.",
+  "   Counter-examples: reviews, usage logs, hands-on impressions, buying guides, ranked recommendations, head-to-head comparisons and copy-my-list posts are not freebie (there is nothing to claim); they should be kind=info. Only things you can actually claim or get for free are freebie.",
+  "2. deal (deals / carpools / resale): clearly cost-effective paid promotions and all-time-low discounts (e.g. Black Friday / anniversary VPS deals, annual-billed small VPS, Steam all-time lows, genuine software buyout sales), plus legitimately organized carpools/shared subscriptions with a clearly stated price (e.g. ChatGPT/Claude/Netflix family-plan seats) or resale/transfer posts with a clearly stated price. Do not block good deals or seats just because they require payment.",
+  "   Hard constraint: when the title contains Chinese trade-intent words such as N出 / 溢价N出 / 出 / 收 / 转让 / 过户 / 出号 / 车位 / 合租 / 拼团 / 独享车 and also carries a price or payment method, kind must be deal and never info (50出zouter = reselling zouter for 50 yuan; that is a deal, not information).",
+  "3. opensource (open-source project): must have an explicit GitHub/GitLab repository, source code, or a deployable self-hosted tool, or an MCP/Agent/Docker project release or recommendation. Pure tech news (no open-source repo/source release) must not be tagged opensource.",
+  "4. news (important news): limited to current-affairs headlines, national policies and regulations, State Council / ministry announcements, international affairs, diplomatic summits and major livelihood news from authoritative outlets such as CCTV News / China News Service / BBC / Deutsche Welle. Consumer shopping guides, e-commerce or brand gossip and gadget news from outlets like 什么值得买 (SMZDM) / IT之家 (ITHome) / community forums must not be tagged news (they should be deal or info).",
+  "5. info (industry information): macroeconomics and finance, stocks/funds/IPO/earnings market updates, big-tech/chip/AI frontier news, hardware and gadget reviews, and developer tech newsletters / in-depth guides.",
   "",
-  "判 keep=false（同时 kind='noise'）的噪音（真正无价值的才拦截）：",
-  "- 求助/提问/求推荐/求拼车/纯收鸡求购（如「谁有优惠券」「求推荐便宜VPS」「求一个ChatGPT拼车」「收一台RN传家宝」「报错429怎么解决」）",
-  "- 语焉不详的代购引流、卖课或推广软广（尤其注意标题看似免费/白嫖，但正文或末尾要求加微/私信/评论区扣1/关注领/返利链接/付费解锁才给的标题党）",
-  "- 毫无亮点的游戏常规微调补丁说明（如「修复若干闪退」，且本体仍需原价购买）",
-  "- 八卦吐槽、吵架引战水贴、纯感慨/讨论帖（如「怎么看待白嫖」「如何评价…」）或无实际可领路径的空泛软文",
-  "- 毫无折扣亮点的普通原价推广",
+  "Noise that gets keep=false (also set kind='noise'): only block genuinely worthless content:",
+  "- Help requests / questions / recommendation asks / carpool asks / pure wanted-to-buy posts (e.g. Chinese example titles like 谁有优惠券, 求推荐便宜VPS, 求一个ChatGPT拼车, 收一台RN传家宝, 报错429怎么解决)",
+  "- Vague proxy-buying lead generation, course sales or promotional advertorials (especially clickbait whose title looks free but whose body or ending demands adding a WeChat contact / a private message / commenting 1 / following to claim / a rebate link / paid unlock before you get anything)",
+  "- Run-of-the-mill game patch notes with nothing notable (e.g. 修复若干闪退, meaning fixed a few crashes, while the game itself still requires paying full price)",
+  "- Gossip, flame-bait, pure venting/discussion posts (e.g. 怎么看待白嫖, 如何评价...) or vague advertorials with no actual claim path",
+  "- Ordinary full-price promotions with no notable discount",
   "",
   CATEGORY_PROMPT_LINE,
   CATEGORY_DESC_LINE,
-  "同时判断「获取方式」obtain，只能是：",
-  "- free：点开即可直接免费拿或开源免费用，不需抽签/付费",
-  "- conditional：需注册、实名、填表、签到攒积分、回复或新用户条件才可领",
-  "- lottery：抽奖/拼手气/随机送",
-  "- lottery 的判定：标题含 Sweepstakes / Winners / 抽奖 / 抽选 / 摇号 / 赢取 一律 obtain=lottery 且 category=lottery，不要标 free；Steam/Epic 的 Giveaway 是免费领游戏，仍标 free。",
-  "- trial：商业 SaaS 短期试用，到期不付钱即停用",
-  "- promo：纯商业引流钩子",
-  "- paid：需实际付费购买（如黑五特价 VPS、史低游戏、买断软件）",
+  "Also determine the obtain mode (obtain), which can only be:",
+  "- free: open it and get it for free directly, or free to use as open source, with no lottery or payment required",
+  "- conditional: requires registration, identity verification, filling out a form, check-in point accrual, a reply, or new-user conditions to claim",
+  "- lottery: raffle / luck-of-the-draw / random giveaway",
+  "- lottery rule: if the title contains Sweepstakes / Winners / 抽奖 / 抽选 / 摇号 / 赢取, always set obtain=lottery and category=lottery; do not mark it free. A Steam/Epic Giveaway is a free game claim, so still mark it free.",
+  "- trial: a short-term commercial SaaS trial that stops working once it expires without payment",
+  "- promo: pure commercial lead-generation hook",
+  "- paid: requires an actual paid purchase (e.g. Black Friday VPS deals, all-time-low games, buyout software)",
   "",
-  "同时给出 1-5 的 quality 质量评分：5=极高价值（3A喜加一/神价黑五VPS/爆款开源/大额Token/重大央媒头条），4=明确好内容（新:free模型/高性价比年付鸡/实用开源工具/重要财经科技资讯），3=一般或有条件，2=限制极多/鸡肋，1=噪音。",
-  '按 JSON 数组返回，元素形如 {"index":0,"keep":true,"kind":"deal","category":"vps","obtain":"paid","quality":5,"reason":"黑五特价 $10.99/年 KVM VPS"}。',
-  "reason 用一句不超过 20 字的中文说清亮点或拦截原因，不要输出多余文本。",
+  "Also give a 1-5 quality score: 5=extremely high value (AAA game giveaway / unbeatable Black Friday VPS / hit open-source project / large token grant / major state-media headline), 4=clearly good content (new :free model / cost-effective annual-billed small VPS / practical open-source tool / important finance or tech information), 3=average or conditional, 2=heavily restricted / marginal, 1=noise.",
+  'Return a JSON array whose elements look like {"index":0,"keep":true,"kind":"deal","category":"vps","obtain":"paid","quality":5,"reason":"Black Friday deal $10.99/yr KVM VPS"}.',
+  "Write reason in English as a single phrase of no more than 8 words, stating the highlight or the block reason; output no extra text.",
 ].join("\n");
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -201,12 +201,12 @@ export function saveAiSettings(patch: Partial<AiSettings>): AiSettings {
   return next;
 }
 
-/** 运行时是否真的能调 AI（开关开、端点与模型都有）。 */
+/** Whether AI can actually be called at runtime (switch on, endpoint and model present). */
 export function aiReady(s = getAiSettings()): boolean {
   return s.enabled && Boolean(s.baseUrl && s.model);
 }
 
-/** 是否命中入口噪音初筛（求助/问价/版本更新补丁 + 用户自定义噪音词）。 */
+/** Whether the entry noise pre-filter is hit (help requests / price questions / version-update notes + user-defined noise keywords). */
 export function matchesEntryNoise(title: string, s = getAiSettings()): boolean {
   if (!s.preFilterEnabled) return false;
   if (isNoiseTitle(title)) return true;
@@ -217,7 +217,7 @@ export function matchesEntryNoise(title: string, s = getAiSettings()): boolean {
   return false;
 }
 
-/** 该数据源是否需要送入 AI 审核。返回 false 且非噪音时，纯白嫖源可视作自动通过。 */
+/** Whether this source needs to be sent to AI review. When it returns false and the item is not noise, a freebie-only source may be treated as auto-approved. */
 export function shouldPassSourceToAi(sourceId: string, s = getAiSettings()): boolean {
   if (s.skipFreebieSources && FREEBIE_ONLY_SOURCES.has(sourceId)) return false;
   if (s.sourceMode === "exclude" && s.sourceIds.includes(sourceId)) return false;
@@ -249,7 +249,7 @@ export function feedbackStats(limit = 6): {
   }
 }
 
-/** 给前端的安全视图：密钥打码。 */
+/** Safe view for the frontend: the API key is masked. */
 export function publicAiSettings(s = getAiSettings()) {
   return {
     apiKey: "",
@@ -282,19 +282,19 @@ export function publicAiSettings(s = getAiSettings()) {
 function buildSystemPrompt(s: AiSettings): string {
   const parts: string[] = [s.systemPrompt.trim() || DEFAULT_PROMPT];
   if (s.extraPrompt.trim()) {
-    parts.push("", "补充审核规则（务必优先遵守）：", s.extraPrompt.trim());
+    parts.push("", "Supplementary review rules (must be followed with priority):", s.extraPrompt.trim());
   }
   parts.push("", CLASSIFICATION_PROMPT);
   if (!s.learnFromFeedback) return parts.join("\n");
   try {
     const fb = feedbackStats(s.feedbackLimit);
     if (!fb.positiveSamples.length && !fb.negativeSamples.length) return parts.join("\n");
-    parts.push("", "以下来自用户近期真实操作（优先贴合这些偏好）：");
+    parts.push("", "The following comes from recent real user actions (match these preferences first):");
     if (fb.positiveSamples.length) {
-      parts.push("用户收藏的正样本（类似应判 keep=true）：" + fb.positiveSamples.map((t) => `「${t}」`).join("、"));
+      parts.push("Positive samples the user starred (similar items should be keep=true): " + fb.positiveSamples.map((t) => `${t}`).join(", "));
     }
     if (fb.negativeSamples.length) {
-      parts.push("用户手动关闭的负样本（类似应判 keep=false）：" + fb.negativeSamples.map((t) => `「${t}」`).join("、"));
+      parts.push("Negative samples the user manually dismissed (similar items should be keep=false): " + fb.negativeSamples.map((t) => `${t}`).join(", "));
     }
   } catch {
     /* ignore */
@@ -334,10 +334,10 @@ async function callOnce(
     const ttfb = Date.now() - t0;
     if (!res.ok) throw new Error("AI HTTP " + res.status + " " + (await res.text()).slice(0, 120));
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    console.log(`${tag} 完成 ${Date.now() - t0}ms（响应头 ${ttfb}ms）`);
+    console.log(`${tag} done ${Date.now() - t0}ms (headers ${ttfb}ms)`);
     const content = data.choices?.[0]?.message?.content ?? "";
     const jsonText = /\[[\s\S]*\]/.exec(content)?.[0];
-    if (!jsonText) throw new Error("AI 未返回 JSON 数组");
+    if (!jsonText) throw new Error("AI did not return a JSON array");
     const arr = JSON.parse(jsonText) as AiVerdict[];
     const map = new Map<number, AiVerdict>();
     for (const v of arr) {
@@ -365,8 +365,8 @@ function aiSummaryExcerpt(it: { summary?: string | null; content?: string | null
 }
 
 /**
- * 送审并返回 index → verdict 的映射。未启用或全部失败返回 null。
- * 条目多于 maxItems 时按 maxItems 截断送审，按 batchSize / concurrency 并发执行。
+ * Submit items for review and return a mapping of index → verdict. Returns null when disabled or when all attempts failed.
+ * When there are more items than maxItems, truncate to maxItems, then run concurrently by batchSize / concurrency.
  */
 export async function reviewItems(
   items: RawItem[],
@@ -412,10 +412,10 @@ export async function reviewItems(
         const msg = err instanceof Error ? err.message : String(err);
         lastErr = msg;
         if (attempt === 0) {
-          console.log(`[ai] 重试 n=${job.payload.length} idx=${job.start}：${msg.slice(0, 60)}`);
+          console.log(`[ai] retry n=${job.payload.length} idx=${job.start}:${msg.slice(0, 60)}`);
           continue;
         }
-        console.log(`[ai] 放弃 n=${job.payload.length} idx=${job.start}：${msg.slice(0, 60)}`);
+        console.log(`[ai] giving up n=${job.payload.length} idx=${job.start}:${msg.slice(0, 60)}`);
       }
     }
     hooks?.onBatch?.({
@@ -442,7 +442,7 @@ export async function reviewItems(
   return ok > 0 ? merged : null;
 }
 
-/** 连通性测试：支持传入表单草稿直接测试（无需先保存），返回完整判定维度与耗时。 */
+/** Connectivity test: accepts a form draft for a direct test (no need to save first), and returns the full verdict fields plus elapsed time. */
 export async function testAiConnection(draft?: Partial<AiSettings>): Promise<{
   ok: boolean;
   ms: number;
@@ -453,10 +453,10 @@ export async function testAiConnection(draft?: Partial<AiSettings>): Promise<{
   const cur = getAiSettings();
   const s: AiSettings = {
     ...normalizeSettings(draft ?? {}, cur),
-    enabled: true, // 测试接口允许在开启总开关前先验证连通性
+    enabled: true, // the test endpoint allows verifying connectivity before the master switch is turned on
   };
   if (!s.baseUrl || !s.model) {
-    return { ok: false, ms: 0, model: s.model, results: [], error: "请先填写 API 端点与模型名" };
+    return { ok: false, ms: 0, model: s.model, results: [], error: "Please fill in the API endpoint and model name first" };
   }
 
   const samples: RawItem[] = [
@@ -469,7 +469,7 @@ export async function testAiConnection(draft?: Partial<AiSettings>): Promise<{
   const t0 = Date.now();
   const jobId = startAiJob({
     stage: "test",
-    label: "草稿配置连通测试",
+    label: "Draft-config connectivity test",
     model: s.model,
     total: samples.length,
     totalBatches: Math.ceil(samples.length / s.batchSize),
@@ -507,8 +507,8 @@ export async function testAiConnection(draft?: Partial<AiSettings>): Promise<{
     });
     const ms = Date.now() - t0;
     if (!map) {
-      finishAiJob(jobId, { error: "模型未返回有效结论" });
-      return { ok: false, ms, model: s.model, results: [], error: "模型未返回有效结论（请检查端点/Key/模型名或超时设置）" };
+      finishAiJob(jobId, { error: "Model returned no valid verdict" });
+      return { ok: false, ms, model: s.model, results: [], error: "Model returned no valid verdict (check the endpoint / Key / model name or timeout setting)" };
     }
     finishAiJob(jobId);
     return {
@@ -526,7 +526,7 @@ export async function testAiConnection(draft?: Partial<AiSettings>): Promise<{
           category: v?.category ?? "-",
           obtain: v?.obtain ?? "-",
           quality: typeof v?.quality === "number" ? v.quality : null,
-          reason: v?.reason ?? "（无结论）",
+          reason: v?.reason ?? "(no verdict)",
         };
       }),
     };

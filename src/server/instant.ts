@@ -1,6 +1,6 @@
 /**
- * 推送模块的历史入口，实际实现已迁到 push.ts（设置、攒批、静默时段、日志都在那里）。
- * 保留这些导出，避免改动 collectors 里已有调用点。
+ * Legacy entry point of the push module; the real implementation moved to push.ts (settings, batching, quiet hours and logs all live there).
+ * These exports are kept so existing call sites in collectors do not have to change.
  */
 export {
   pushInstant,
@@ -28,7 +28,7 @@ export {
 
 import { all, get } from "./db.ts";
 
-/** 兼容旧调用：返回最近推过的条目（不含正文，避免列表过大）。 */
+/** Legacy-compatible call: returns recently pushed items (without the body, keeping the list small). */
 export function recentPushed(limit = 20) {
   return all(
     "SELECT id, source_id, title, url, score, codes, pushed_at FROM items WHERE pushed_at IS NOT NULL ORDER BY pushed_at DESC LIMIT ?",

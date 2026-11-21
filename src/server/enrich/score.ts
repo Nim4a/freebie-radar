@@ -1,23 +1,23 @@
 /**
- * 综合评分：多维加权，AI 质量分主导。
+ * Combined score: multi-dimensional weighting, led by the AI quality score.
  *
- * 旧实现是纯关键词加法（基线 30，免费 +15，福利词出现即 +10/14，24h 内 +16……），
- * 结果就是「标题堆满免费/白嫖/限时」就能刷到高分，而 AI 已经给出的质量分完全没参与。
- * 这里改成五个 0-100 维度的加权和，再乘一个惩罚系数：
+ * The old implementation was pure keyword addition (baseline 30, free +15, any freebie word +10/14, within 24h +16 ...),
+ * so a title stuffed with "free / freebie / limited time" could reach a high score while the AI quality score played no part at all.
+ * This is now a weighted sum of five 0-100 dimensions multiplied by a penalty factor:
  *
- *   获取确定性 30%  free/conditional/trial/lottery/promo/paid 各自一档，paid 按价格档次
- *   AI 质量分  35%  1-5 分映射为 8/30/55/80/100；未审条目回退到规则内容分 ×0.9
- *   时效       15%  连续衰减，不再 24h/3d/7d 跳档
- *   来源可信度 10%  用近 30 天真实 AI 留存率 + 平均质量分算，不再写死一张表
- *   可验证性   10%  兑换码、限量/限时、具体数量——越能立刻验证「真有这福利」越高
+ * Obtain certainty 30%  one band each for free/conditional/trial/lottery/promo/paid; paid follows the price band
+ * AI quality      35%  1-5 maps to 8/30/55/80/100; unreviewed items fall back to the rule content score x0.9
+ * Recency         15%  continuous decay, no more jumps at 24h/3d/7d
+ * Source trust    10%  computed from the real 30-day AI retention rate + average quality score, no hard-coded table
+ * Verifiability   10%  redemption codes, limited/limited-time, concrete quantities - the easier it is to verify "this freebie is real", the higher
  *
- * 惩罚（乘性）：疑问/求助 ×0.55、引流话术（加微/私信/评论区扣） ×0.6、标题过短 ×0.72。
+ * Penalties (multiplicative): questions/help requests x0.55, engagement bait (add WeChat / DM / comment below) x0.6, too-short title x0.72.
  */
 
 import { all } from "../db.ts";
 import { isNoiseTitle, URGENT } from "./noise.ts";
 
-/** 各维度权重，合计 1。改这里就是调口径。 */
+/** Dimension weights, summing to 1. Change these to retune the model. */
 export const SCORE_WEIGHTS = {
   obtain: 0.3,
   quality: 0.35,
@@ -51,7 +51,7 @@ function clamp(n: number, lo = 0, hi = 100): number {
   return Math.max(lo, Math.min(hi, n));
 }
 
-/** 获取确定性：这一维回答「点开就能拿到吗」。 */
+/** Obtain certainty: this dimension answers "can you click and get it". */
 const OBTAIN_SCORE: Record<string, number> = {
   free: 100,
   conditional: 72,
@@ -68,7 +68,7 @@ export function obtainScore(
 ): number {
   const key = obtain ?? "";
   if (key !== "paid") return OBTAIN_SCORE[key] ?? 55;
-  // 付费条目要看形态：黑五好价/资讯/开源是「值得买」，普通福利区的付费条目基本不该高分
+  // For paid items look at the kind: a Black Friday deal / news / open source is "worth buying", ordinary paid items in the freebie feed should mostly not score high
   if (kind === "deal" || kind === "news" || kind === "info" || kind === "opensource") {
     const p = typeof price === "number" && price >= 0 ? price : null;
     if (p === null) return 65;
@@ -80,7 +80,7 @@ export function obtainScore(
   return 25;
 }
 
-/** AI 质量分曲线：1 分等于出局，5 分满分。未审时回退到规则内容分。 */
+/** AI quality curve: 1 means out, 5 is full marks. Falls back to the rule content score when unreviewed. */
 const QUALITY_CURVE: Record<number, number> = { 1: 8, 2: 30, 3: 55, 4: 80, 5: 100 };
 
 export function qualityScore(quality: number | null | undefined, ruleScore: number): number {
@@ -91,7 +91,7 @@ export function qualityScore(quality: number | null | undefined, ruleScore: numb
   return clamp(Math.round(ruleScore * 0.9));
 }
 
-/** 时效：连续衰减，越新越高，不再有 24h/3d/7d 的跳档断层。 */
+/** Recency: continuous decay, newer is higher, no more 24h/3d/7d cliffs. */
 export function freshnessScore(publishedAt: string | null | undefined): number {
   if (!publishedAt) return 55;
   const t = new Date(publishedAt).getTime();
@@ -111,7 +111,7 @@ type SourceStat = { reviewed: number; keepRate: number; avgQuality: number };
 const TRUST_TTL_MS = 10 * 60_000;
 let trustCache: { at: number; map: Map<string, SourceStat> } | null = null;
 
-/** 来源可信度：近 30 天真实 AI 留存率 + 平均质量分。样本不足 5 条时视为中性 50 分。 */
+/** Source trust: real 30-day AI retention rate + average quality score. Fewer than 5 samples is treated as a neutral 50. */
 export function sourceTrustMap(): Map<string, SourceStat> {
   if (trustCache && Date.now() - trustCache.at < TRUST_TTL_MS) return trustCache.map;
   const map = new Map<string, SourceStat>();
@@ -137,7 +137,7 @@ export function sourceTrustMap(): Map<string, SourceStat> {
       });
     }
   } catch {
-    // 表还没建好或查询失败时按中性处理，不影响入库
+    // treat it as neutral when the table is not built yet or the query fails; it does not affect storage
   }
   trustCache = { at: Date.now(), map };
   return map;
@@ -158,7 +158,7 @@ export function trustScore(sourceId: string | undefined, map = sourceTrustMap())
 const QUANTITY_RE = /\d+\s*(?:个|份|名|台|张|次|天|GB|TB|MB|元|美刀|刀)/i;
 const SCARCITY_RE = /限量|限时|先到先得|手慢无|名额|库存|剩余|抢完|截止/i;
 
-/** 可验证性：越能立刻验证「真有这福利、现在还能领」越高。 */
+/** Verifiability: the easier it is to verify "this freebie is real and still claimable" right now, the higher. */
 export function proofScore(title: string, codes?: string[]): number {
   let s = 20;
   if (codes?.length) s += 50;
@@ -171,33 +171,33 @@ export function proofScore(title: string, codes?: string[]): number {
 const LURE_RE =
   /加微|加\s*V|微信|私信|关注(?:后|领|即可|才)|评论区?\s*扣|扣\s*1|返利|返现|\baff\b|扫码进群|进群领|付费解锁/i;
 
-/** 乘性惩罚：标题党与引流话术的通用指纹。 */
+/** Multiplicative penalty: the common fingerprint of clickbait and engagement bait. */
 export function penaltyFactor(title: string, summary = ""): { factor: number; notes: string[] } {
   const notes: string[] = [];
   let factor = 1;
   if (isNoiseTitle(title)) {
     factor *= 0.55;
-    notes.push("疑问/求助");
+    notes.push("question/help request");
   }
   if (LURE_RE.test(`${title} ${summary}`)) {
     factor *= 0.6;
-    notes.push("引流话术");
+    notes.push("engagement bait");
   }
-  // 只有真给了标题才判断长度，未传 ctx 时不要凭空扣分
+  // only judge the length when a title was actually given; do not invent a penalty when ctx is missing
   if (title && title.trim().length < 6) {
     factor *= 0.72;
-    notes.push("标题过短");
+    notes.push("title too short");
   }
   return { factor: Math.max(0.15, factor), notes };
 }
 
 /**
- * 合成最终分数。
+ * Produces the final score.
  *
- * 缺失维度（没有发布时间、来源样本不足）不参与加权，权重按比例分给其余维度——
- * 否则「未知」被当成「中等偏差」会把所有新源的分数一起压低。
+ * Missing dimensions (no publish time, not enough source samples) are excluded from the weighting and their weight is redistributed over the rest -
+ * otherwise "unknown" is treated as "slightly below average" and drags every new source's score down.
  *
- * @param ruleScore 规则内容分（scoreItem 的结果，0-100），只作为「AI 未审」时的质量回退
+ * rule content score (scoreItem's result, 0-100), used only as the quality fallback when the AI has not reviewed the item
  */
 export function combineScore(
   ruleScore: number,
@@ -217,8 +217,8 @@ export function combineScore(
   };
 
   if (aiKeep === false || kind === "noise") {
-    // AI 判否或噪音：直接压到底，不参与加权，避免关键词把垃圾顶回来
-    return { total: Math.min(Math.round(ruleScore * 0.25), 25), ...dims, penalty: 0.25, notes: ["AI 判否"] };
+    // the AI rejected it or it is noise: push it straight to the bottom without weighting, so keywords cannot drag junk back up
+    return { total: Math.min(Math.round(ruleScore * 0.25), 25), ...dims, penalty: 0.25, notes: ["AI rejected"] };
   }
 
   const parts: Array<{ key: keyof typeof dims; weight: number; known: boolean }> = [

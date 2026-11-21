@@ -19,7 +19,7 @@ function postUrl(handle: string, uri: string): string {
 }
 
 /**
- * Bluesky 公开接口（免登录、零反爬、JSON），用于聚合 X/游戏/羊毛博主的实时动态。
+ * Bluesky public API (no login, no anti-bot, JSON), used to aggregate real-time posts from X / gaming / deal accounts.
  */
 export const bskyCollector: Collector = {
   kind: "bsky",

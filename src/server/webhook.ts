@@ -24,9 +24,9 @@ export function isPublicAddress(address: string): boolean {
 
 export function validateWebhookUrl(raw: string, allowPrivate = !isPublicSite && config.webhookAllowPrivate): URL {
   let url: URL;
-  try { url = new URL(raw); } catch { throw new Error("Webhook 地址无效"); }
+  try { url = new URL(raw); } catch { throw new Error("invalid Webhook URL"); }
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash || raw.length > 500) {
-    throw new Error("Webhook 必须是无用户名、密码或片段的 HTTP(S) 地址");
+    throw new Error("Webhook URL must be a plain HTTP(S) URL with no username, password or fragment");
   }
   const host = url.hostname.replace(/^\[|\]$/g, "");
   if (!allowPrivate && (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || (isIP(host) && !isPublicAddress(host)))) {
@@ -51,7 +51,7 @@ export async function postWebhook(urlString: string, text: string, secret = "", 
   const signal = AbortSignal.timeout(15_000);
   const target = await Promise.race([
     resolveWebhookTarget(url, resolver),
-    new Promise<never>((_, reject) => signal.addEventListener("abort", () => reject(new Error("Webhook DNS 查询超时")), { once: true })),
+    new Promise<never>((_, reject) => signal.addEventListener("abort", () => reject(new Error("Webhook DNS lookup timed out")), { once: true })),
   ]);
   await new Promise<void>((resolve, reject) => {
     const request = url.protocol === "https:" ? httpsRequest : httpRequest;

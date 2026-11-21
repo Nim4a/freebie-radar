@@ -1,7 +1,7 @@
 import { all, get, dbRevision } from "./db.ts";
 import { TitleDeduper } from "./enrich/dedup.ts";
 
-/** 通用虚词 + 福利域里的「无信息量」词：这类词每条标题都有，进词云只会淹没真正的热点 */
+/** Generic function words plus the "no information value" words of the freebie domain: every title contains them, so letting them into the word cloud just drowns out the real hotspots */
 const CJK_STOP = new Set(
   (
     "的 了 和 与 或 在 是 有 我 你 他 她 它 这 那 我们 你们 他们 自己 一个 一些 什么 怎么 如何 为什么 " +
@@ -34,12 +34,12 @@ const EN_STOP = new Set(
       .filter(Boolean),
 );
 
-/** 纯数字、纯标点、纯符号的碎片直接丢掉 */
+/** Drop pure-number, pure-punctuation and pure-symbol fragments outright */
 const JUNK = /^[0-9\p{P}\p{S}\s]+$/u;
 
 const segmenter = new Intl.Segmenter("zh-CN", { granularity: "word" });
 
-/** 把标题切成候选词：中文按词、英文按 ≥3 字母的单词，过滤停用词与碎片 */
+/** Split a title into candidate words: Chinese by word, English by words of 3+ letters, filtering stopwords and fragments */
 export function tokenize(title: string): string[] {
   const cleaned = title.replace(/https?:\/\/\S+/gi, " ").replace(/\b[a-z0-9-]+\.(?:ly|to|cc|gg|io|me|co|com|net|org|cn)\b/gi, " ");
   const out: string[] = [];
@@ -80,17 +80,17 @@ export type HotReport = {
   scope: HotScope;
   from: string;
   to: string;
-  /** 窗口内参与统计的条目数（跨源事件去重后） */
+  /** Number of items that took part in the statistics for this window (after cross-source event dedup) */
   scanned: number;
   prevScanned: number;
-  /** 去重前原始条目数 */
+  /** Raw item count before dedup */
   rawScanned: number;
   words: HotWord[];
   categories: HotBucket[];
   kinds: HotBucket[];
-  /** 「这个窗口最值得抢」：严格只包含真福利与高性价比好价（已去重，绝不混入新闻/资讯/水帖） */
+  /** "Best grabs in this window": strictly real freebies and high-value deals (already deduped, never news, information or off-topic posts) */
   top: HotTopItem[];
-  /** 「热点新闻与行业资讯」：重要新闻、经济股票、科技前沿与开源项目（已去重） */
+  /** "Hot news and industry information": important news, markets and stocks, tech frontier and open-source projects (already deduped) */
   topNews: HotTopItem[];
 };
 
@@ -147,7 +147,7 @@ function matchesScope(r: Row, scope: HotScope): boolean {
   return true;
 }
 
-/** 用 TitleDeduper 折叠同事件/同福利条目，返回代表条 + 聚合来源数 */
+/** Collapse same-event / same-freebie items with TitleDeduper, returning the representative item plus the aggregated source count */
 function clusterDedupe(rows: Row[]): Array<{ row: Row; count: number }> {
   if (!rows.length) return [];
   const deduper = new TitleDeduper(rows);
@@ -203,7 +203,7 @@ export function buildHotReport(windowHours = 24, rawScope?: string): HotReport {
     if (row.kind) bump(kinds, row.kind, inCurrent);
   }
 
-  // 按所选范围过滤并做同事件去重，避免多源转帖把某个热词放大 5-10 倍
+  // Filter by the selected range and dedup same events, so multi-source reposts cannot inflate a hot word 5-10x
   const scopedCurrent = clusterDedupe(rawCurrent.filter((r) => matchesScope(r, scope)));
   const scopedPrev = clusterDedupe(rawPrev.filter((r) => matchesScope(r, scope)));
 
@@ -231,7 +231,7 @@ export function buildHotReport(windowHours = 24, rawScope?: string): HotReport {
       .map(([key, v]) => ({ key, n: v.n, prev: v.prev, delta: v.n - v.prev }))
       .sort((a, b) => b.n - a.n || b.delta - a.delta);
 
-  // 「这个窗口最值得抢」：严格只取 freebie / deal，排除新闻/资讯/开源/水帖与纯二手/纯商业推广，并按同事件去重
+  // "Best grabs in this window": strictly freebie / deal, excluding news, information, open source and off-topic posts as well as pure second-hand or pure commercial promotion, deduped by same event
   const dealCandidates = rawCurrent.filter((r) => {
     const k = r.kind ?? "freebie";
     if (k !== "freebie" && k !== "deal") return false;
@@ -261,7 +261,7 @@ export function buildHotReport(windowHours = 24, rawScope?: string): HotReport {
       dupCount: count,
     }));
 
-  // 「热点新闻与行业资讯」：重要新闻、经济股票、科技前沿与开源项目（同样跨源去重）
+  // "Hot news and industry information": important news, markets and stocks, tech frontier and open-source projects (also deduped across sources)
   const newsCandidates = rawCurrent.filter((r) => {
     const k = r.kind ?? "freebie";
     if (scope === "news") return k === "news";
@@ -309,8 +309,8 @@ export function buildHotReport(windowHours = 24, rawScope?: string): HotReport {
 }
 
 /**
- * 来源质量榜：按源的 AI 留存率、平均质量分与推送命中率排，用来判断哪些源在浪费采集与 AI 额度。
- * 留存率 = AI 判为有效的条数 / 已审条数；未审核的条目单独计数，不掺进分母。
+ * Source quality table: ranked by a source's AI retention rate, average quality score and push hit rate, to judge which sources waste collection and AI quota.
+ * Retention rate = items the AI judged valid / items reviewed; unreviewed items are counted separately and never mixed into the denominator.
  */
 export function sourceQuality(sinceDays = 7): {
   id: string;

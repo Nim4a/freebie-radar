@@ -4,7 +4,7 @@ import { decodeEntities } from "./enrich/normalize.ts";
 export type FlareResult = { status: number; body: string; url: string };
 
 const SESSION = "radar";
-/** 空闲 90 秒后自动销毁 FlareSolverr 浏览器实例，避免 Chromium 长期常驻吃掉 300MB+ 内存 */
+/** Tear down the FlareSolverr browser instance after 90 seconds idle, so Chromium is not resident eating 300MB+ */
 const SESSION_IDLE_MS = 90_000;
 
 function endpointOf(base: string): string {
@@ -28,7 +28,7 @@ async function post(endpoint: string, body: Record<string, unknown>, timeoutMs =
   try {
     return JSON.parse(text) as FlarePayload;
   } catch {
-    throw new Error(`FlareSolverr 返回非 JSON (${res.status}): ${text.slice(0, 160)}`);
+    throw new Error(`FlareSolverr returned non-JSON (${res.status}): ${text.slice(0, 160)}`);
   }
 }
 
@@ -52,7 +52,7 @@ async function ensureSession(endpoint: string): Promise<void> {
   if (sessionUp && Date.now() - lastSessionUse < 20 * 60_000) return;
   const created = await post(endpoint, { cmd: "sessions.create", session: SESSION });
   if (created.status !== "ok" && !/already exists/i.test(created.message ?? "")) {
-    throw new Error(`创建 session 失败: ${created.message ?? created.status}`);
+    throw new Error(`session create failed: ${created.message ?? created.status}`);
   }
   sessionUp = true;
   touchSessionIdle(endpoint);
@@ -67,7 +67,7 @@ async function dropSession(endpoint: string): Promise<void> {
   try {
     await post(endpoint, { cmd: "sessions.destroy", session: SESSION }, 10_000);
   } catch {
-    /* 销毁失败无所谓，下次会重建 */
+    /* destroy failure is harmless; the session gets recreated next time */
   }
 }
 
@@ -83,7 +83,7 @@ async function request(endpoint: string, url: string, timeoutMs: number, session
   const payload = await post(endpoint, payloadBody, timeoutMs + 15_000);
   if (payload.status !== "ok" || !payload.solution) {
     throw new Error(
-      `FlareSolverr 失败: ${payload.message ?? payload.status ?? "unknown"} (${JSON.stringify(payload).slice(0, 120)})`,
+      `FlareSolverr failed: ${payload.message ?? payload.status ?? "unknown"} (${JSON.stringify(payload).slice(0, 120)})`,
     );
   }
   const raw = String(payload.solution.response ?? "");
@@ -97,10 +97,10 @@ async function request(endpoint: string, url: string, timeoutMs: number, session
 }
 
 /**
- * 通过 FlareSolverr 取页面。使用 session 复用并在空闲 90 秒后自动销毁释放浏览器内存。
+ * Fetch a page through FlareSolverr, reusing a session and destroying it after 90 seconds idle to free browser memory.
  */
 export async function flaresolverrGet(url: string, timeoutMs = config.flaresolverrTimeoutMs): Promise<FlareResult> {
-  if (!config.flaresolverrUrl) throw new Error("FLARESOLVERR_URL 未配置，无法访问被 Cloudflare 保护的源");
+  if (!config.flaresolverrUrl) throw new Error("FLARESOLVERR_URL is not configured; cannot reach sources protected by Cloudflare");
   const endpoint = endpointOf(config.flaresolverrUrl);
 
   await ensureSession(endpoint);
