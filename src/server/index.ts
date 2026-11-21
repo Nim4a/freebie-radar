@@ -21,6 +21,7 @@ import { purgeExpiredSessions } from "./auth.ts";
 import { getBuildInfo } from "./updater.ts";
 import { registerSecurity } from "./security.ts";
 import { reconcileFixedSourceCategories } from "./source-settings.ts";
+import { startTranslateScheduler, translatePending } from "./enrich/translate.ts";
 
 migrate();
 ensureSources();
@@ -103,6 +104,8 @@ if (config.enableScheduler) {
   startPushScheduler();
   // Per-user Bot batching: each user dequeues on their own schedule, independent of the global batch
   startUserPushScheduler();
+  // English rendering of scraped Chinese titles/summaries (TRANSLATE_* env); runs every few minutes
+  startTranslateScheduler();
   // Daily digest: still triggered by DAILY_CRON
   startScheduler({
     collect: async () => undefined,
@@ -110,6 +113,10 @@ if (config.enableScheduler) {
       const now = new Date();
       const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       if (digestExists(day)) return;
+      // Make sure the picks go out in English even for items collected minutes before the digest
+      await translatePending(config.dailyTopN * 3).catch((err) => {
+        console.error("[translate] pre-digest pass failed:", err instanceof Error ? err.message : err);
+      });
       await runDaily({ date: now });
       // Once the daily picks are stored, send a copy to each user with "personal daily digest" enabled
       await pushUserDaily().catch((err) => {

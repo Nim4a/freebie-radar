@@ -524,6 +524,24 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS idx_items_status_time
     ON items(status, COALESCE(published_at, first_seen_at) DESC);
   `,
+
+  /* v?: English rendering of scraped Chinese titles/summaries. The original title is never overwritten —
+     matchers (keywords, block rules, noise, subscriptions, dedupe) keep reading the Chinese source text;
+     title_en/summary_en only feed the display surfaces (web, RSS, Telegram digest/push). */
+  `
+  ALTER TABLE items ADD COLUMN title_en TEXT;
+  `,
+  `
+  ALTER TABLE items ADD COLUMN summary_en TEXT;
+  `,
+  `
+  ALTER TABLE items ADD COLUMN translated_at TEXT;
+  `,
+  /* v?: partial index so the translation pass finds untranslated rows without scanning 16k rows every 5 minutes */
+  `
+  CREATE INDEX IF NOT EXISTS idx_items_untranslated
+    ON items(id) WHERE translated_at IS NULL;
+  `,
 ];
 
 export function dbPath(): string {

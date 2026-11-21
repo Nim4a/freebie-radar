@@ -18,6 +18,7 @@ import {
 import { isBlocked, type BlockRule } from "./enrich/blocklist.ts";
 import { TitleDeduper, type DedupeEntry } from "./enrich/index.ts";
 import { matchesEntryNoise } from "./enrich/ai.ts";
+import { hydrateTranslations } from "./enrich/translate.ts";
 import { URGENT, hasValueSignal } from "./enrich/noise.ts";
 import type { FreshItem } from "./collectors/index.ts";
 import { postWebhook as sendWebhook, validateWebhookUrl } from "./webhook.ts";
@@ -515,6 +516,9 @@ async function dispatchForUser(user: ActiveUser, sourceId: string, fresh: FreshI
     recordDelivery(user.userId, o.it.id, "queued", null, o.reason, o.route?.name ?? null);
   }
 
+  // Items that just arrived may not be in the English pass yet — render them in English here.
+  await hydrateTranslations(picked.map((p) => p.it), { max: 12, timeoutMs: 20_000 });
+
   let sent = 0;
   for (const { it, reason, subHits, route } of picked) {
     if (!recordDelivery(user.userId, it.id, "queued", null, reason, route?.name ?? null)) continue;
@@ -594,6 +598,8 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
     source_id: string;
     title: string;
     summary: string | null;
+    title_en: string | null;
+    summary_en: string | null;
     url: string;
     category: string | null;
     kind: string | null;
@@ -608,7 +614,7 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
     ai: string | null;
     canonical_id: number | null;
   }>(
-    `SELECT id, source_id, title, summary, url, category, kind, score, codes, price, is_free, obtain,
+    `SELECT id, source_id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain,
             expires_at, published_at, status, ai, canonical_id
        FROM items WHERE id IN (${ph})`,
     ...ids,
@@ -651,6 +657,8 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
       category: r.category,
       obtain: r.obtain,
       summary: r.summary,
+      title_en: r.title_en,
+      summary_en: r.summary_en,
       canonicalId: r.canonical_id,
     };
     if (!passesPushFilters({ ...item, sourceId: r.source_id }, s)) continue;
@@ -672,6 +680,8 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
   }
 
   const header = picked[0]!.route?.header ?? s.customHeader ?? "📦 Resource Radar · Batch summary";
+  await hydrateTranslations(picked.map((p) => p.item), { max: 12, timeoutMs: 20_000 });
+
   const lines: string[] = [`${header} (${picked.length} items)`];
   picked.forEach((p, i) => {
     lines.push("");
@@ -733,6 +743,8 @@ async function sendDailyDigest(user: ActiveUser): Promise<number> {
     source_id: string;
     title: string;
     summary: string | null;
+    title_en: string | null;
+    summary_en: string | null;
     url: string;
     category: string | null;
     kind: string | null;
@@ -746,7 +758,7 @@ async function sendDailyDigest(user: ActiveUser): Promise<number> {
     ai: string | null;
     canonical_id: number | null;
   }>(
-    `SELECT id, source_id, title, summary, url, category, kind, score, codes, price, is_free, obtain,
+    `SELECT id, source_id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain,
             expires_at, published_at, ai, canonical_id
        FROM items
       WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ?
@@ -783,6 +795,8 @@ async function sendDailyDigest(user: ActiveUser): Promise<number> {
       category: r.category,
       obtain: r.obtain,
       summary: r.summary,
+      title_en: r.title_en,
+      summary_en: r.summary_en,
       canonicalId: r.canonical_id,
     };
     if (!passesPushFilters({ ...item, sourceId: r.source_id }, s)) continue;
@@ -790,6 +804,7 @@ async function sendDailyDigest(user: ActiveUser): Promise<number> {
     if (items.length >= Math.min(12, budget)) break;
   }
   if (!items.length) return 0;
+  await hydrateTranslations(items.map((p) => p.item), { max: 12, timeoutMs: 20_000 });
   const lines = [`📰 Resource Radar · Personal digest (${new Date().toISOString().slice(0, 10)}, ${items.length} items)`];
   items.forEach((p, i) => {
     lines.push("");
@@ -926,6 +941,8 @@ export function previewUserPush(userId: number, limit = 6): {
     source_id: string;
     title: string;
     summary: string | null;
+    title_en: string | null;
+    summary_en: string | null;
     url: string;
     category: string | null;
     kind: string | null;
@@ -939,7 +956,7 @@ export function previewUserPush(userId: number, limit = 6): {
     ai: string | null;
     canonical_id: number | null;
   }>(
-    `SELECT id, source_id, title, summary, url, category, kind, score, codes, price, is_free, obtain,
+    `SELECT id, source_id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain,
             expires_at, published_at, ai, canonical_id
        FROM items WHERE status = 'active' AND NOT EXISTS (
          SELECT 1 FROM user_push_deliveries d WHERE d.user_id = ? AND d.item_id = items.id AND d.status = 'sent'
@@ -988,6 +1005,8 @@ export function previewUserPush(userId: number, limit = 6): {
       category: r.category,
       obtain: r.obtain,
       summary: r.summary,
+      title_en: r.title_en,
+      summary_en: r.summary_en,
       canonicalId: r.canonical_id,
     };
     const reason = checkReason({ ...item, sourceId: r.source_id }, s);
@@ -1069,6 +1088,8 @@ export async function dispatchUserPushByIds(sourceId: string, itemIds: readonly 
     id: number;
     title: string;
     summary: string | null;
+    title_en: string | null;
+    summary_en: string | null;
     url: string;
     category: string | null;
     kind: string | null;
@@ -1082,7 +1103,7 @@ export async function dispatchUserPushByIds(sourceId: string, itemIds: readonly 
     ai: string | null;
     canonical_id: number | null;
   }>(
-    "SELECT id, title, summary, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, ai, canonical_id " +
+    "SELECT id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, ai, canonical_id " +
       "FROM items WHERE id IN (" + ph + ") AND status = 'active'",
     ...itemIds,
   );
@@ -1110,6 +1131,8 @@ export async function dispatchUserPushByIds(sourceId: string, itemIds: readonly 
       category: r.category,
       obtain: r.obtain,
       summary: r.summary,
+      title_en: r.title_en,
+      summary_en: r.summary_en,
       canonicalId: r.canonical_id,
     };
   });

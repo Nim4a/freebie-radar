@@ -5,6 +5,7 @@ import { mergeKey, TitleDeduper, type DedupeEntry } from "./enrich/index.ts";
 import { hasValueSignal, URGENT } from "./enrich/noise.ts";
 import { filterPushDuplicatesWithAi, type DedupCandidate } from "./enrich/ai-dedup.ts";
 import { getAiSettings } from "./enrich/ai-settings.ts";
+import { displayTitle, hydrateTranslations } from "./enrich/translate.ts";
 import { KIND_LABEL, type ContentKind } from "./enrich/kind.ts";
 import { OBTAIN_LABEL } from "./enrich/obtain.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
@@ -793,7 +794,7 @@ export function itemBlock(sourceId: string, it: FreshItem, s: PushSettings, seq?
   if (detectLang(it.title) === "en" && s.langMode === "all") meta.push("EN");
   if (s.includeScore && it.score) meta.push(Math.round(it.score) + " pts");
 
-  lines.push(prefix + it.title.slice(0, 110));
+  lines.push(prefix + displayTitle(it).slice(0, 110));
   lines.push("   " + meta.join(" · "));
   if (s.includeAiReason && it.aiReason) lines.push("   💡 " + it.aiReason);
   if (it.codes.length) lines.push("   Code: " + it.codes.join(" / "));
@@ -818,6 +819,9 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
     return passesPushFilters({ ...it, sourceId }, s);
   });
   const deduper = s.dedupeByTitle ? new TitleDeduper(candidates, recentPushedSeeds(true)) : null;
+  // Fresh items are pushed within seconds of collection, before the background pass has
+  // seen them: one bounded call so the message still goes out in English.
+  await hydrateTranslations(candidates, { max: 12, timeoutMs: 20_000 });
 
   const instant: { it: FreshItem; reason: string; subHits: string[]; route: PushRoute | null }[] = [];
   const batched: QueueItem[] = [];
@@ -941,8 +945,10 @@ export async function pushReviewedByIds(sourceId: string, itemIds: number[]): Pr
 published_at: string | null;
     ai: string | null;
     canonical_id: number | null;
+    title_en: string | null;
+    summary_en: string | null;
   }>(
-    `SELECT id, title, summary, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, ai, canonical_id
+    `SELECT id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, ai, canonical_id
        FROM items
       WHERE id IN (${ph}) AND status = 'active' AND pushed_at IS NULL`,
     ...itemIds,
@@ -973,6 +979,8 @@ published_at: string | null;
       category: r.category,
       obtain: r.obtain,
       summary: r.summary,
+      title_en: r.title_en,
+      summary_en: r.summary_en,
       canonicalId: r.canonical_id,
     };
   });
@@ -1018,8 +1026,10 @@ export async function flushBatch(force = false): Promise<number> {
 status: string;
     ai: string | null;
     canonical_id: number | null;
+    title_en: string | null;
+    summary_en: string | null;
   }>(
-    `SELECT id, source_id, title, summary, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, pushed_at, status, ai, canonical_id
+    `SELECT id, source_id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, pushed_at, status, ai, canonical_id
        FROM items WHERE id IN (${ph})`,
     ...ids,
   );
@@ -1057,6 +1067,8 @@ status: string;
       category: r.category,
       obtain: r.obtain,
       summary: r.summary,
+      title_en: r.title_en,
+      summary_en: r.summary_en,
       canonicalId: r.canonical_id,
     };
     if (!passesPushFilters({ ...fresh, sourceId: r.source_id }, s)) continue;
@@ -1098,6 +1110,10 @@ status: string;
     }
   }
   if (!take.length) return 0;
+
+  // Same reason as the instant path: a queued item may have been collected before the
+  // background pass reached it. One bounded call, never blocks longer than the timeout.
+  await hydrateTranslations(take.map((q) => q.item), { max: 12, timeoutMs: 20_000 });
 
   const blocks: string[] = [];
   take.forEach((q, i) => {
@@ -1255,8 +1271,10 @@ export function previewPush(limit = 6): {
 published_at: string | null;
     ai: string | null;
     canonical_id: number | null;
+    title_en: string | null;
+    summary_en: string | null;
   }>(
-    `SELECT id, source_id, title, summary, url, category, kind, score, codes, price, is_free, obtain, expires_at, pushed_at, published_at, ai, canonical_id
+    `SELECT id, source_id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain, expires_at, pushed_at, published_at, ai, canonical_id
      FROM items WHERE status = 'active' AND pushed_at IS NULL AND COALESCE(published_at, first_seen_at) >= ?
      ORDER BY score DESC LIMIT 180`,
     new Date(Date.now() - lookbackHours * 3_600_000).toISOString(),
@@ -1330,6 +1348,8 @@ published_at: string | null;
       category: r.category,
       obtain: r.obtain,
       summary: r.summary,
+      title_en: r.title_en,
+      summary_en: r.summary_en,
       canonicalId: r.canonical_id,
     };
     const reject = checkPushFilter({ ...fresh, sourceId: r.source_id }, s);

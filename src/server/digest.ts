@@ -5,6 +5,7 @@ import { hasValueSignal, isNoiseTitle } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { getPushSettings, passesPushFilters, sourceLabel } from "./push.ts";
 import { sendTelegram } from "./telegram.ts";
+import { displayTitle, hydrateTranslations } from "./enrich/translate.ts";
 import { buildHotReport } from "./hot.ts";
 export { sendTelegram };
 export type DigestItem = {
@@ -24,6 +25,10 @@ export type DigestItem = {
   codes?: string;
   urlKey?: string | null;
   ai_quality?: number | null;
+  /** English rendering of `title` (display only) */
+  title_en?: string | null;
+  /** English rendering of `summary` (display only) */
+  summary_en?: string | null;
 };
 
 export type Digest = {
@@ -68,7 +73,7 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
   const now = new Date().toISOString();
 
   const rows = all<DigestItem>(
-    "SELECT id, source_id, title, url, url_key AS urlKey, category, kind, score, expires_at, published_at, price, is_free, obtain, ai, codes FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 400",
+    "SELECT id, source_id, title, title_en, summary_en, url, url_key AS urlKey, category, kind, score, expires_at, published_at, price, is_free, obtain, ai, codes FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 400",
     lookback,
     now,
   );
@@ -133,7 +138,7 @@ export function formatDigest(items: DigestItem[], date = new Date()): string {
     const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? KIND_LABEL[it.kind as ContentKind] : null;
     const exp = daysLeft(it.expires_at);
     const meta = [sourceLabel(it.source_id), kindTag, cat, exp].filter(Boolean).join(" · ");
-    lines.push(i + 1 + ". " + it.title.slice(0, 100));
+    lines.push(i + 1 + ". " + displayTitle(it).slice(0, 100));
     lines.push("   " + meta);
     lines.push("   " + it.url);
     lines.push("");
@@ -150,6 +155,9 @@ export async function runDaily(options: { dryRun?: boolean; date?: Date; log?: (
   const date = options.date ?? new Date();
   const key = dayKey(date);
   const items = pickDaily(date);
+  // The digest is the main English surface: make sure the picks are rendered in English
+  // even for items collected minutes before this run.
+  await hydrateTranslations(items, { max: 40, timeoutMs: 30_000 });
   const text = formatDigest(items, date);
 
   if (options.dryRun) {
@@ -229,7 +237,7 @@ export function pickWeekly(date = new Date(), topN = 20): DigestItem[] {
   const start = new Date(end.getTime() - WEEK_DAYS * 86_400_000);
   const now = new Date().toISOString();
   const rows = all<DigestItem>(
-    `SELECT id, source_id, title, url, url_key AS urlKey, category, kind, score, expires_at, published_at,
+    `SELECT id, source_id, title, title_en, summary_en, url, url_key AS urlKey, category, kind, score, expires_at, published_at,
             price, is_free, obtain, ai, codes, ai_quality
        FROM items
       WHERE status = 'active'
@@ -305,7 +313,7 @@ export function formatWeekly(items: DigestItem[], date = new Date()): string {
     const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? KIND_LABEL[it.kind as ContentKind] : null;
     const exp = daysLeft(it.expires_at);
     const meta = [sourceLabel(it.source_id), kindTag, cat, exp].filter(Boolean).join(" · ");
-    lines.push(i + 1 + ". " + it.title.slice(0, 100));
+    lines.push(i + 1 + ". " + displayTitle(it).slice(0, 100));
     lines.push("   " + meta);
     lines.push("   " + it.url);
     lines.push("");
@@ -321,6 +329,7 @@ export async function runWeekly(options: { dryRun?: boolean; date?: Date; log?: 
   const date = options.date ?? new Date();
   const key = weekKey(date);
   const items = pickWeekly(date);
+  await hydrateTranslations(items, { max: 40, timeoutMs: 30_000 });
   const text = formatWeekly(items, date);
 
   if (options.dryRun) {

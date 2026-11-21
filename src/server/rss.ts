@@ -20,6 +20,9 @@ export type RssItem = {
   expires_at: string | null;
   image_url?: string | null;
   ai: string | null;
+  /** English rendering of `title` / `summary` (display only; fall back to the originals) */
+  title_en?: string | null;
+  summary_en?: string | null;
 };
 
 function escapeXml(input: string): string {
@@ -79,7 +82,8 @@ function describe(item: RssItem): string {
   if (codes.length) parts.push("Codes: " + codes.join(" / "));
   const ai = parseAi(item.ai);
   const lines = [parts.join(" · ")];
-  if (item.summary) lines.push("", item.summary);
+  const summary = (item.summary_en ?? "").trim() || item.summary;
+  if (summary) lines.push("", summary);
   if (ai.reason) lines.push("", "💡 " + ai.reason);
   if (item.url) lines.push("", item.url);
   return lines.join("\n");
@@ -109,7 +113,7 @@ export function buildRssXml(items: readonly RssItem[], opts: RssFeedOptions): st
     `<title>${escapeXml(opts.title)}</title>`,
     `<link>${escapeXml(opts.link)}</link>`,
     `<description>${escapeXml(opts.description)}</description>`,
-    `<language>zh-CN</language>`,
+    `<language>en</language>`,
     `<lastBuildDate>${now}</lastBuildDate>`,
     `<generator>freebie-radar</generator>`,
     `<atom:link href="${escapeXml(opts.selfUrl)}" rel="self" type="application/rss+xml"/>`,
@@ -119,7 +123,7 @@ export function buildRssXml(items: readonly RssItem[], opts: RssFeedOptions): st
     const pub = item.published_at ?? item.first_seen_at;
     const pubDate = pub ? new Date(pub) : null;
     body.push("<item>");
-    body.push(`<title>${escapeXml(item.title)}</title>`);
+    body.push(`<title>${escapeXml((item.title_en ?? "").trim() || item.title)}</title>`);
     body.push(`<link>${escapeXml(item.url)}</link>`);
     body.push(`<guid isPermaLink="false">radar-${item.id}</guid>`);
     if (pubDate && !Number.isNaN(pubDate.getTime())) body.push(`<pubDate>${pubDate.toUTCString()}</pubDate>`);

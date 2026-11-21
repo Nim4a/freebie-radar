@@ -159,10 +159,13 @@ export type ItemRow = {
   first_seen_at: string;
   last_seen_at: string;
   canonical_id?: number | null;
+  /** English rendering written by enrich/translate.ts (null until translated) */
+  title_en?: string | null;
+  summary_en?: string | null;
 };
 
 // List payloads never select full snapshots. The drawer fetches content on demand.
-const LIST_COLUMNS = "id, source_id, external_id, url, url_key, title_key, title, SUBSTR(summary, 1, 1200) AS summary, author, category, image_url, kind, ai_quality, tags, codes, price, is_free, obtain, score, expires_at, published_at, status, starred, ai, read_at, pushed_at, first_seen_at, last_seen_at, canonical_id";
+const LIST_COLUMNS = "id, source_id, external_id, url, url_key, title_key, title, title_en, SUBSTR(summary, 1, 1200) AS summary, summary_en, author, category, image_url, kind, ai_quality, tags, codes, price, is_free, obtain, score, expires_at, published_at, status, starred, ai, read_at, pushed_at, first_seen_at, last_seen_at, canonical_id";
 
 /** Keywords matched by subscriptions (always compared lowercased), used by the front end for highlighting and filtering. */
 function matchKeywords(row: ItemRow, keywords: string[]): string[] {
@@ -648,6 +651,7 @@ const PUBLIC_GET_EXACT = new Set([
   "/api/source-quality",
   "/api/site/bootstrap",
   "/api/rss",
+  "/api/translate/status",
 ]);
 
 const PUBLIC_GET_PREFIX = ["/api/items/", "/api/digests/"];
@@ -1448,6 +1452,14 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     return c.json(await backfillAi(limit, mode));
   });
 
+  app.post("/api/translate/run", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { limit?: number };
+    const limit = Number.isFinite(Number(body.limit)) ? Number(body.limit) : undefined;
+    return c.json(await translatePending(limit));
+  });
+
+  app.get("/api/translate/status", (c) => c.json(translationStatus()));
+
   app.post("/api/ai/reclassify", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { scope?: string };
     const scope = body.scope === "all" ? "all" : "other";
@@ -2086,7 +2098,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     const { where, params } = buildItemsQuery({ ...q, status: q.status ?? "active" }, rules, false, scope);
     const clause = where.length ? "WHERE " + where.join(" AND ") : "";
     return all<RssItem>(
-      "SELECT id, source_id, title, url, summary, content, category, kind, score, price, is_free, obtain, codes, " +
+      "SELECT id, source_id, title, title_en, summary, summary_en, content, category, kind, score, price, is_free, obtain, codes, " +
         "published_at, first_seen_at, expires_at, image_url, ai FROM items " + clause +
         " ORDER BY COALESCE(published_at, first_seen_at) DESC LIMIT ?",
       ...params,

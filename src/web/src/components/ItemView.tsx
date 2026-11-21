@@ -212,7 +212,7 @@ export function CompactRow({
               (aiRejected ? "line-through decoration-ink-300 text-ink-500" : "")
             }
           >
-            {item.title}
+            {item.title_en || item.title}
           </button>
           <KindBadge kind={item.kind} category={item.category} inline />
           {showPrice && <PriceBadge item={item} inline />}
@@ -452,11 +452,11 @@ export function ItemCard({
             (aiRejected ? "line-through decoration-ink-300 text-ink-500" : "")
           }
         >
-          {item.title}
+          {item.title_en || item.title}
         </h3>
 
         {item.summary && (
-          <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-relaxed text-ink-600">{item.summary}</p>
+          <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-relaxed text-ink-600">{item.summary_en || item.summary}</p>
         )}
 
         {(matched.length > 0 || codes.length > 0 || item.ai?.reason || (item.dupCount ?? 1) > 1) && (
@@ -711,7 +711,7 @@ export function ItemDetailDrawer({
             )}
           </div>
 
-          <h2 className="text-[17px] leading-snug font-semibold text-ink-950">{item.title}</h2>
+          <h2 className="text-[17px] leading-snug font-semibold text-ink-950">{item.title_en || item.title}</h2>
           {onClassificationSave && item.manualClassification !== undefined && !loading && !error && <ItemClassificationEditor key={item.id} item={item} onSave={onClassificationSave} />}
 
           {item.ai?.reason && (
@@ -756,7 +756,7 @@ export function ItemDetailDrawer({
           {item.summary && (
             <div>
               <div className="mb-1 text-[12px] font-medium text-ink-500">Summary</div>
-              <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap text-ink-700">{item.summary}</p>
+              <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap text-ink-700">{item.summary_en || item.summary}</p>
             </div>
           )}
 
@@ -900,7 +900,7 @@ export function QuickBlockModal({
         </div>
 
         <p className="mb-3 line-clamp-2 rounded-lg border border-ink-200 bg-surface-hover p-2.5 text-[12.5px] text-ink-700">
-          {item.title}
+          {item.title_en || item.title}
         </p>
 
         <div className="space-y-3">

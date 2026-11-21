@@ -65,6 +65,19 @@ export const config = {
   aiModel: str("AI_MODEL"),
   aiMaxItems: num("AI_MAX_ITEMS", 60),
 
+  /* English rendering of Chinese scraped titles/summaries (see enrich/translate.ts).
+     Empty TRANSLATE_BASE_URL/API_KEY/MODEL fall back to the AI settings above. */
+  translateEnabled: bool("TRANSLATE_ENABLED", true),
+  translateBaseUrl: str("TRANSLATE_BASE_URL"),
+  translateApiKey: str("TRANSLATE_API_KEY"),
+  translateModel: str("TRANSLATE_MODEL"),
+  /** Rows translated per tick (1-200) */
+  translateBatch: num("TRANSLATE_BATCH", 30),
+  /** Rows per upstream request (2-20) */
+  translateBatchSize: num("TRANSLATE_BATCH_SIZE", 8),
+  /** Minutes between ticks */
+  translateIntervalMin: num("TRANSLATE_INTERVAL_MIN", 5),
+
   ingestToken: str("INGEST_TOKEN"),
   /** On-demand headless Cookie runner on the VPS (listens on the private network/bridge only; 0 MB of browser memory when idle) */
   cookieRunnerUrl: str("COOKIE_RUNNER_URL", "http://172.17.0.1:18790"),

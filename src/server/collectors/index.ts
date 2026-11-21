@@ -553,6 +553,10 @@ export type FreshItem = {
   canonicalId?: number | null;
   /** Publish time, used to block re-pushing of old history posts */
   publishedAt?: string | null;
+  /** English rendering of `title` (see enrich/translate.ts). Display only — matchers keep reading the original `title`. */
+  title_en?: string | null;
+  /** English rendering of `summary`. Display only. */
+  summary_en?: string | null;
 };
 
 /** Use AI's obtain when provided, otherwise fall back to keyword heuristics. */

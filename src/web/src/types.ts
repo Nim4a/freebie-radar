@@ -4,7 +4,10 @@ export type Item = {
   external_id: string;
   url: string;
   title: string;
+  /** English rendering written by the server's translate pass; null until translated */
+  title_en?: string | null;
   summary: string | null;
+  summary_en?: string | null;
   author: string | null;
   category: string | null;
   kind?: string | null;
