@@ -9,7 +9,7 @@ import { displayTitle, hydrateTranslations } from "./enrich/translate.ts";
 import { KIND_LABEL, type ContentKind } from "./enrich/kind.ts";
 import { OBTAIN_LABEL } from "./enrich/obtain.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
-import { interestingCategory, offTopicReason } from "./enrich/interest.ts";
+import { passesInterest } from "./enrich/interest.ts";
 import { packItemMessages } from "./tg-pack.ts";
 import { sendTelegram } from "./telegram.ts";
 import type { FreshItem } from "./collectors/index.ts";
@@ -469,7 +469,7 @@ export function checkPushFilter(
   if (!aiAllowed(item, s)) return "ai";
   // Topic filter before routes: free AI / domain / VPS / cloud only, never free-internet
   // nodes or game giveaways. A matching route must not be able to re-admit them.
-  if (offTopicReason(item) !== null || !interestingCategory(item.category)) return "interest";
+  if (!passesInterest(item)) return "interest";
 
   const hasEnabledRoutes = s.routes?.some((r) => r.enabled);
   if (hasEnabledRoutes) {

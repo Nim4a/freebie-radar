@@ -6,7 +6,7 @@ import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { getPushSettings, passesPushFilters, sourceLabel } from "./push.ts";
 import { sendTelegram } from "./telegram.ts";
 import { displayTitle, hydrateTranslations } from "./enrich/translate.ts";
-import { interestingCategory, offTopicReason } from "./enrich/interest.ts";
+import { passesInterest } from "./enrich/interest.ts";
 import { packItemMessages } from "./tg-pack.ts";
 import { buildHotReport } from "./hot.ts";
 export { sendTelegram };
@@ -96,10 +96,7 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
     // Topic filter: only free AI / domain / VPS / cloud, never free-internet nodes or games.
     // Checked on the source text plus the English rendering, so nothing slips through
     // just because a title was translated.
-    if (
-      !interestingCategory(r.category) ||
-      offTopicReason({ title: [r.title, r.title_en ?? ""].join(" "), summary: r.summary_en ?? null }) !== null
-    ) return false;
+    if (!passesInterest({ title: r.title, title_en: r.title_en, summary_en: r.summary_en, category: r.category })) return false;
     if (settings.aiFallbackMode !== "ignore_ai" && (aiKeep === false || r.kind === "noise")) return false;
     if (!settings.applyToDigest) return true;
     return passesPushFilters({
