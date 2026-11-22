@@ -5,6 +5,7 @@ import { reconcileSourceCategory, getSourceHints, getManualClassification } from
 import { getClassificationSettings, saveClassificationSettings } from "./classification-settings.ts";
 import { contentSignals } from "./enrich/evidence.ts";
 import { enrichItem, resolveKind } from "./enrich/index.ts";
+import { translatePending, translationStatus } from "./enrich/translate.ts";
 import { guessObtain } from "./enrich/obtain.ts";
 import { applyChannelQuery } from "../shared/channel-query.ts";
 import { TitleDeduper } from "./enrich/dedup.ts";

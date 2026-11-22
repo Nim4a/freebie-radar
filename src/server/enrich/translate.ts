@@ -122,7 +122,8 @@ function parseTranslationArray(text: string): Array<{ i: number; t: string; s?: 
   let s = (text ?? "").trim();
   if (!s) return null;
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) s = fence[1].trim();
+  const fenced = fence?.[1];
+  if (fenced) s = fenced.trim();
   const first = s.indexOf("[");
   const last = s.lastIndexOf("]");
   if (first === -1 || last <= first) return null;
@@ -284,6 +285,7 @@ export async function translatePending(limit?: number): Promise<TranslateStats> 
     const stamp = new Date().toISOString();
     for (let k = 0; k < chunk.length; k += 1) {
       const row = chunk[k];
+      if (!row) continue;
       const hit = byIndex.get(k);
       if (!hit || !usableTranslation(hit.t, MAX_TITLE_CHARS)) {
         stats.failed += 1;
@@ -482,6 +484,7 @@ export async function hydrateTranslations(
   const stamp = new Date().toISOString();
   for (let k = 0; k < need.length; k += 1) {
     const row = need[k];
+    if (!row) continue;
     const hit = byIndex.get(k);
     if (!hit || !usableTranslation(hit.t, MAX_TITLE_CHARS)) continue;
     const summaryEn = hit.s && usableTranslation(hit.s, MAX_SUMMARY_CHARS) ? hit.s.trim() : null;
