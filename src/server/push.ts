@@ -9,6 +9,8 @@ import { displayTitle, hydrateTranslations } from "./enrich/translate.ts";
 import { KIND_LABEL, type ContentKind } from "./enrich/kind.ts";
 import { OBTAIN_LABEL } from "./enrich/obtain.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
+import { interestingCategory, offTopicReason } from "./enrich/interest.ts";
+import { packItemMessages } from "./tg-pack.ts";
 import { sendTelegram } from "./telegram.ts";
 import type { FreshItem } from "./collectors/index.ts";
 import { CATEGORY_SET, KIND_ORDER, OBTAIN_SET } from "../shared/taxonomy.ts";
@@ -432,7 +434,17 @@ export function freshEnoughForPush(
   return nowMs - ts <= maxAgeHours * 3_600_000;
 }
 
-export type FilterRejectReason = "stale" | "source" | "lang" | "kind" | "category" | "price" | "ai" | "obtain" | "route";
+export type FilterRejectReason =
+  | "stale"
+  | "source"
+  | "lang"
+  | "kind"
+  | "category"
+  | "price"
+  | "ai"
+  | "obtain"
+  | "route"
+  | "interest";
 
 export function checkPushFilter(
   item: {
@@ -455,6 +467,9 @@ export function checkPushFilter(
   if (!sourceAllowed(item.sourceId, s)) return "source";
   if (!langAllowed(item, s)) return "lang";
   if (!aiAllowed(item, s)) return "ai";
+  // Topic filter before routes: free AI / domain / VPS / cloud only, never free-internet
+  // nodes or game giveaways. A matching route must not be able to re-admit them.
+  if (offTopicReason(item) !== null || !interestingCategory(item.category)) return "interest";
 
   const hasEnabledRoutes = s.routes?.some((r) => r.enabled);
   if (hasEnabledRoutes) {
@@ -900,25 +915,33 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
   }
   if (!picked.length) return 0;
 
+  // ONE message for the whole round: the user wants a single clickable list, not a ping per item.
+  const headerBase = picked[0]?.route?.header || s.customHeader || "⚡ New";
+  const footer = config.publicBaseUrl ? "🔗 " + config.publicBaseUrl : "";
+  const messages = packItemMessages(
+    picked.map(({ it }) => ({ title: displayTitle(it), url: it.url })),
+    (part, parts) =>
+      headerBase + " · " + picked.length + (picked.length === 1 ? " item" : " items") +
+      (parts > 1 ? ` (${part}/${parts})` : ""),
+    footer ? () => footer : undefined,
+  );
+  const text = messages.join("\n\n");
+  const reasons = summarizeReasons(picked.map((p) => p.reason));
   let sent = 0;
-  for (const { it, reason, subHits, route } of picked) {
-    const prefix = route?.header ? route.header + " · " : s.customHeader ? s.customHeader + " · " : "⚡ New · ";
-    const lines = [prefix + reason, "", ...itemBlock(sourceId, it, s, undefined, subHits)];
-    const text = lines.join("\n");
-    try {
-      await sendTelegram(text);
-      const now = new Date().toISOString();
+  try {
+    for (const m of messages) await sendTelegram(m, { parseMode: "HTML" });
+    const now = new Date().toISOString();
+    for (const { it } of picked) {
       run("UPDATE items SET pushed_at = ?, title_key = ? WHERE id = ?", now, titleKey(it.title), it.id);
-      logPush("instant", [it.id], text, 1, true, null, reason);
-      sent += 1;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[push] instant push failed:", msg);
-      logPush("instant", [it.id], text, 0, false, msg, reason);
-      break;
     }
+    logPush("instant", picked.map(({ it }) => it.id), text, picked.length, true, null, reasons);
+    sent = picked.length;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[push] instant push failed:", msg);
+    logPush("instant", picked.map(({ it }) => it.id), text, 0, false, msg, reasons);
   }
-  if (sent) console.log("[push] " + sourceId + " instant push " + sent + " items");
+  if (sent) console.log("[push] " + sourceId + " instant push " + sent + " items in " + messages.length + " message(s)");
   return sent;
 }
 
@@ -1115,27 +1138,29 @@ status: string;
   // background pass reached it. One bounded call, never blocks longer than the timeout.
   await hydrateTranslations(take.map((q) => q.item), { max: 12, timeoutMs: 20_000 });
 
-  const blocks: string[] = [];
-  take.forEach((q, i) => {
-    if (hasRoutes && q.route) {
-      blocks.push(`[${q.route.header || q.route.name}]`);
-    }
-    blocks.push(...itemBlock(q.sourceId, q.item, s, i + 1, q.subHits ?? []));
-    blocks.push("");
-  });
-  const batchTitle = s.customHeader
-    ? `${s.customHeader} · ${take.length} items total`
+  const footer = config.publicBaseUrl ? "🔗 " + config.publicBaseUrl : "";
+  let batchTitle = s.customHeader
+    ? `${s.customHeader} · ${take.length} items`
     : `📦 ${take.length} new this round`;
-  const text = [batchTitle, "", ...blocks].join("\n").trim();
+  if (hasRoutes) {
+    const tags = [...new Set(take.map((q) => q.route?.header || q.route?.name).filter(Boolean))];
+    if (tags.length) batchTitle += " · " + tags.join(" / ");
+  }
+  const messages = packItemMessages(
+    take.map((q) => ({ title: displayTitle(q.item), url: q.item.url })),
+    (part, parts) => batchTitle + (parts > 1 ? ` (${part}/${parts})` : ""),
+    footer ? () => footer : undefined,
+  );
+  const text = messages.join("\n\n");
 
   try {
-    await sendTelegram(text);
+    for (const m of messages) await sendTelegram(m, { parseMode: "HTML" });
     const now = new Date().toISOString();
     for (const q of take) {
       run("UPDATE items SET pushed_at = ?, title_key = ? WHERE id = ?", now, titleKey(q.item.title), q.id);
     }
     logPush("batch", take.map((q) => q.id), text, take.length, true, null, summarizeReasons(take.map((q) => q.reason)));
-    console.log("[push] batch push " + take.length + " items");
+    console.log("[push] batch push " + take.length + " items in " + messages.length + " message(s)");
     return take.length;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -6,6 +6,8 @@ import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { getPushSettings, passesPushFilters, sourceLabel } from "./push.ts";
 import { sendTelegram } from "./telegram.ts";
 import { displayTitle, hydrateTranslations } from "./enrich/translate.ts";
+import { interestingCategory, offTopicReason } from "./enrich/interest.ts";
+import { packItemMessages } from "./tg-pack.ts";
 import { buildHotReport } from "./hot.ts";
 export { sendTelegram };
 export type DigestItem = {
@@ -91,6 +93,13 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
       try { aiKeep = (JSON.parse(r.ai) as { keep?: boolean }).keep ?? null; } catch { aiKeep = null; }
     }
     aiKeepMap.set(r.id, aiKeep);
+    // Topic filter: only free AI / domain / VPS / cloud, never free-internet nodes or games.
+    // Checked on the source text plus the English rendering, so nothing slips through
+    // just because a title was translated.
+    if (
+      !interestingCategory(r.category) ||
+      offTopicReason({ title: [r.title, r.title_en ?? ""].join(" "), summary: r.summary_en ?? null }) !== null
+    ) return false;
     if (settings.aiFallbackMode !== "ignore_ai" && (aiKeep === false || r.kind === "noise")) return false;
     if (!settings.applyToDigest) return true;
     return passesPushFilters({
@@ -129,65 +138,32 @@ function daysLeft(iso: string | null): string | null {
   return "ends in " + d + " days";
 }
 
-const TG_TEXT_LIMIT = 4000;
-/** Room for the header line + the footer added to every message */
-const TG_HEADER_RESERVE = 60;
-
-function htmlEscape(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function digestFooter(): string {
+  return config.publicBaseUrl ? "🔗 All: " + config.publicBaseUrl : "";
 }
 
-/** Telegram HTML mode keeps the URL inside href, so a line costs only its title */
-function itemLine(it: DigestItem, index: number, titleCap: number): string {
-  const raw = (displayTitle(it) || "(untitled)").replace(/\s+/g, " ").trim();
-  const title = raw.length > titleCap ? raw.slice(0, titleCap - 1).trimEnd() + "…" : raw;
-  return index + '. <a href="' + htmlEscape(it.url).replace(/"/g, "&quot;") + '">' + htmlEscape(title) + "</a>";
-}
-
-function digestHeader(count: number, date: Date, part = 1, parts = 1): string {
+function digestHeaderFor(count: number, date: Date): (part: number, parts: number) => string {
   const label = `${date.getMonth() + 1}/${date.getDate()}`;
-  const tail = parts > 1 ? ` (${part}/${parts})` : "";
-  return "🛰 Radar · " + label + " — " + count + " items" + tail;
+  return (part, parts) => {
+    const tail = parts > 1 ? ` (${part}/${parts})` : "";
+    return "🛰 Radar · " + label + " — " + count + " items" + tail;
+  };
 }
 
 /**
- * Packs EVERY item into as few Telegram messages as the 4096-char cap allows.
- * One single message is the normal case; only an unusually heavy day spills over.
+ * The whole day in ONE message, every item a numbered hyperlink. Telegram counts only
+ * the visible text, so the URL inside <a href> is free and ~45 items fit comfortably;
+ * titles are trimmed in stages before the list is ever split.
  */
-function packDigest(items: DigestItem[], date: Date, limit: number, titleCap: number): string[] {
-  const footer = config.publicBaseUrl ? "\n🔗 All: " + config.publicBaseUrl : "";
-  const budget = Math.max(500, limit - footer.length - TG_HEADER_RESERVE);
-  const chunks: string[] = [];
-  let lines: string[] = [];
-  let used = 0;
-  for (let i = 0; i < items.length; i += 1) {
-    const it = items[i];
-    if (!it) continue;
-    const line = itemLine(it, i + 1, titleCap);
-    if (lines.length && used + line.length > budget) {
-      chunks.push(lines.join("\n"));
-      lines = [];
-      used = 0;
-    }
-    lines.push(line);
-    used += line.length + 1;
-  }
-  if (lines.length) chunks.push(lines.join("\n"));
-  if (!chunks.length) chunks.push("");
-  const parts = chunks.length;
-  return chunks.map(
-    (body, idx) => digestHeader(items.length, date, idx + 1, parts) + footer + "\n\n" + body,
+export function buildDigestMessages(items: DigestItem[], date = new Date()): string[] {
+  const picks = items.map((it) => ({ title: displayTitle(it), url: it.url }));
+  const footer = digestFooter();
+  const packed = packItemMessages(
+    picks,
+    digestHeaderFor(items.length, date),
+    footer ? () => footer : undefined,
   );
-}
-
-/** Try progressively shorter titles first: a trimmed title beats a second message */
-export function buildDigestMessages(items: DigestItem[], date = new Date(), limit = TG_TEXT_LIMIT): string[] {
-  let packed: string[] = [];
-  for (const cap of [92, 72, 56]) {
-    packed = packDigest(items, date, limit, cap);
-    if (packed.length <= 1) return packed;
-  }
-  return packed;
+  return packed.length ? packed : [digestHeaderFor(items.length, date)(1, 1)];
 }
 
 export function formatDigest(items: DigestItem[], date = new Date()): string {
