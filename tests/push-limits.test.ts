@@ -155,7 +155,28 @@ test("free AI / domain / VPS posts tagged deal or info still pass the kind gate"
   const { coreFreeKindAllowed, passesPushFilters } = await import("../src/server/push.ts");
   // the sources file free AI / domain / VPS as "deal" | "info" — those must reach the digest
   assert.equal(coreFreeKindAllowed({ kind: "deal", category: "vps", obtain: "free" }, ["freebie"]), true);
-  assert.equal(coreFreeKindAllowed({ kind: "info", category: "domain", obtain: "free", isFree: true }, ["freebie"]), true);
+  assert.equal(
+    coreFreeKindAllowed(
+      { kind: "info", category: "domain", obtain: "free", isFree: true, title: "免费领取 .dev 域名一年" },
+      ["freebie"],
+    ),
+    true,
+  );
+  // plain industry chatter in a core category is NOT a freebie
+  assert.equal(
+    coreFreeKindAllowed(
+      { kind: "info", category: "vps", obtain: "free", isFree: true, title: "关于香港32区IP被墙及更换恢复的通知" },
+      ["freebie"],
+    ),
+    false,
+  );
+  assert.equal(
+    coreFreeKindAllowed(
+      { kind: "info", category: "ai", obtain: "free", isFree: true, title: "这个 Leaflow 的 Token 越用越多啊" },
+      ["freebie"],
+    ),
+    false,
+  );
   assert.equal(coreFreeKindAllowed({ kind: "deal", category: "ai", obtain: null, price: 0 }, ["freebie"]), true);
   // never widen outside the core categories, never for noise, never for a paid post
   assert.equal(coreFreeKindAllowed({ kind: "deal", category: "pan", obtain: "free" }, ["freebie"]), false);

@@ -398,9 +398,14 @@ export function kindAllowed(kind: string | null | undefined, allow: string[]): b
  * The ask is *free* AI / domain / VPS / cloud, and sources file those as "deal" or "info"
  * (a free-domain registration, a new free model on OpenRouter, a free-tier VPS) rather than
  * as "freebie". Requiring kind=freebie left 2 candidates out of 89 core-category items, so
- * the weekly digest went out empty. Widen the kind gate only for a core-category item that
- * is genuinely free; the interest gate above still rejects every off-topic bucket and noise.
+ * the weekly digest went out empty. Widen the kind gate only for a core-category item that is
+ * genuinely free; a plain "info" post is industry chatter (an IP being blocked somewhere) and
+ * only counts when its own text advertises something free — otherwise the digest fills up with
+ * news. The interest gate above still rejects noise and every off-topic bucket.
  */
+const FREE_OFFER_RE =
+  /(免费|白嫖|领取|赠送|送\s*\d|试用|免费额度|抵扣|优惠码|折扣|free|gratis|giveaway|trial|free ?tier|promo|no cost|zero ?cost)/i;
+
 export function coreFreeKindAllowed(
   item: {
     kind?: string | null;
@@ -408,6 +413,10 @@ export function coreFreeKindAllowed(
     obtain?: string | null;
     price?: number | null;
     isFree?: boolean;
+    title?: string | null;
+    titleEn?: string | null;
+    summary?: string | null;
+    summaryEn?: string | null;
   },
   allow: string[],
 ): boolean {
@@ -417,7 +426,10 @@ export function coreFreeKindAllowed(
   if (!(item.obtain === "free" || item.isFree === true || (typeof item.price === "number" && item.price <= 0))) {
     return false;
   }
-  return item.kind === "deal" || item.kind === "info";
+  if (item.kind === "deal") return true;
+  if (item.kind !== "info") return false;
+  const text = [item.title, item.titleEn, item.summary, item.summaryEn].filter(Boolean).join(" ");
+  return text.length > 0 && FREE_OFFER_RE.test(text);
 }
 
 export function matchPushRoute(
