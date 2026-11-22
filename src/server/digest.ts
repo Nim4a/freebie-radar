@@ -329,7 +329,7 @@ export function formatWeekly(items: DigestItem[], date = new Date()): string {
     .join(" · ");
 
   const lines = [head, toFaDigits(items.length) + " مورد · فقط موارد تأییدشده که منقضی نشده‌اند", ""];
-  if (hot.length) lines.push("🔥 کلمات داغ این هفته: " + hot.join(" · "));
+  if (hot.length) lines.push("🔥 کلمات داغ این هفته: " + hot.map((h) => toFaDigits(h)).join(" · "));
   if (catLine) lines.push("📊 توزیع دسته‌ها: " + catLine);
   lines.push("");
 
