@@ -1,6 +1,7 @@
 import { config } from "./config.ts";
 import { all, get, run } from "./db.ts";
-import { CATEGORY_LABEL, dedupeByTitle, KIND_LABEL, type ContentKind, type DedupeEntry } from "./enrich/index.ts";
+import { dedupeByTitle, type DedupeEntry } from "./enrich/index.ts";
+import { categoryLabelFa, kindLabelFa } from "./tg-labels.ts";
 import { hasValueSignal, isNoiseTitle } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { getPushSettings, passesPushFilters, sourceLabel } from "./push.ts";
@@ -130,17 +131,17 @@ function daysLeft(iso: string | null): string | null {
   if (!iso) return null;
   const d = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
   if (Number.isNaN(d)) return null;
-  if (d < 0) return "expired";
-  if (d === 0) return "ends today";
-  return "ends in " + d + " days";
+  if (d < 0) return "منقضی";
+  if (d === 0) return "امروز آخرین روز";
+  return toFaDigits(d) + " روز مانده";
 }
 
 function digestFooter(): string {
-  return config.publicBaseUrl ? "🔗 All: " + config.publicBaseUrl : "";
+  return config.publicBaseUrl ? "🔗 همه: " + config.publicBaseUrl : "";
 }
 
 function digestHeaderFor(count: number, date: Date): (part: number, parts: number) => string {
-  const label = `${date.getMonth() + 1}/${date.getDate()}`;
+  const label = toFaDigits(date.getMonth() + 1) + "/" + toFaDigits(date.getDate());
   return (part, parts) => {
     const tail = parts > 1 ? ` (${toFaDigits(part)}/${toFaDigits(parts)})` : "";
     return "🛰 رادار · " + label + " — " + toFaDigits(count) + " مورد" + tail;
@@ -164,7 +165,7 @@ export function buildDigestMessages(items: DigestItem[], date = new Date()): str
 }
 
 export function formatDigest(items: DigestItem[], date = new Date()): string {
-  const label = `${date.getMonth() + 1}/${date.getDate()}`;
+  const label = toFaDigits(date.getMonth() + 1) + "/" + toFaDigits(date.getDate());
   if (!items.length) return "🛰 رادار منابع · " + label + "\n\nامروز مورد رایگانی پیدا نشد؛ فردا می‌بینمت.";
   return buildDigestMessages(items, date).join("\n\n");
 }
@@ -309,14 +310,14 @@ export function pickWeekly(date = new Date(), topN = 20): DigestItem[] {
 export function formatWeekly(items: DigestItem[], date = new Date()): string {
   const end = new Date(date);
   const start = new Date(end.getTime() - (WEEK_DAYS - 1) * 86_400_000);
-  const range = shortDate(dayKey(start)) + " ~ " + shortDate(dayKey(end));
+  const range = toFaDigits(shortDate(dayKey(start))) + " ~ " + toFaDigits(shortDate(dayKey(end)));
   const head = "🛰 رادار منابع · برگزیده‌های هفته (" + range + ")";
   if (!items.length) return head + "\n\nاین هفته مورد رایگانی پیدا نشد؛ هفتهٔ بعد می‌بینمت.";
 
   const hot = buildHotReport(WEEK_DAYS * 24).words.slice(0, 6).map((w) => w.w);
   const byCategory = new Map<string, number>();
   for (const it of items) {
-    const key = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "Other";
+    const key = categoryLabelFa(it.category);
     byCategory.set(key, (byCategory.get(key) ?? 0) + 1);
   }
   const catLine = [...byCategory.entries()]
@@ -331,8 +332,8 @@ export function formatWeekly(items: DigestItem[], date = new Date()): string {
   lines.push("");
 
   items.forEach((it, i) => {
-    const cat = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "Other";
-    const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? KIND_LABEL[it.kind as ContentKind] : null;
+    const cat = categoryLabelFa(it.category);
+    const kindTag = kindLabelFa(it.kind);
     const exp = daysLeft(it.expires_at);
     const meta = [sourceLabel(it.source_id), kindTag, cat, exp].filter(Boolean).join(" · ");
     lines.push(toFaDigits(i + 1) + ". " + displayTitleFa(it).slice(0, 100));

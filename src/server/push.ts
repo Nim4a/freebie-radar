@@ -6,8 +6,7 @@ import { hasValueSignal, URGENT } from "./enrich/noise.ts";
 import { filterPushDuplicatesWithAi, type DedupCandidate } from "./enrich/ai-dedup.ts";
 import { getAiSettings } from "./enrich/ai-settings.ts";
 import { displayTitleFa, hydrateTranslations } from "./enrich/translate.ts";
-import { KIND_LABEL, type ContentKind } from "./enrich/kind.ts";
-import { OBTAIN_LABEL } from "./enrich/obtain.ts";
+import { kindLabelFa, obtainLabelFa } from "./tg-labels.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { passesInterest } from "./enrich/interest.ts";
 import { packItemMessages, toFaDigits } from "./tg-pack.ts";
@@ -511,7 +510,7 @@ function matchSubscriptions(item: { title: string; summary?: string | null }, ke
 }
 
 function fmtPrice(item: FreshItem): string | null {
-  if (item.isFree) return "Free";
+  if (item.isFree) return "رایگان";
   if (typeof item.price !== "number" || item.price <= 0) return null;
   const v = item.price < 1 ? "<1" : String(Math.round(item.price));
   return "~¥" + v;
@@ -659,14 +658,14 @@ function decide(item: FreshItem, s: PushSettings, subHits: string[], route: Push
     return { push: false, reason: "", urgent: false, route };
   }
   if (s.prioritizeSubscribed && subHits.length > 0) {
-    return { push: true, reason: routeTag + "subscription hit: " + subHits.join("/"), urgent: true, route };
+    return { push: true, reason: routeTag + "اشتراک: " + subHits.join("/"), urgent: true, route };
   }
-  if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: routeTag + "has code", urgent: true, route };
+  if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: routeTag + "کد دارد", urgent: true, route };
   if (s.instantOnUrgent && URGENT.test(item.title) && item.score >= 40) {
-    return { push: true, reason: routeTag + "limited/limited-time", urgent: true, route };
+    return { push: true, reason: routeTag + "زمان محدود", urgent: true, route };
   }
   const scoreGate = route ? Math.max(s.instantScore, route.minScore) : s.instantScore;
-  if (item.score >= scoreGate) return { push: true, reason: routeTag + "high score " + Math.round(item.score), urgent: false, route };
+  if (item.score >= scoreGate) return { push: true, reason: routeTag + "امتیاز بالا " + toFaDigits(Math.round(item.score)), urgent: false, route };
   return { push: false, reason: "", urgent: false, route };
 }
 
@@ -794,19 +793,19 @@ export function itemBlock(sourceId: string, it: FreshItem, s: PushSettings, seq?
   const lines: string[] = [];
   const prefix = seq === undefined ? "" : seq + ". ";
   const meta: string[] = [sourceLabel(sourceId)];
-  const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? KIND_LABEL[it.kind as ContentKind] : null;
+  const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? kindLabelFa(it.kind) : null;
   if (kindTag) meta.push(kindTag);
   const price = s.includePrice ? fmtPrice(it) : null;
   if (price) meta.push(price);
   if (s.includeObtain && it.obtain && it.obtain !== "free") {
-    meta.push(OBTAIN_LABEL[it.obtain as keyof typeof OBTAIN_LABEL] ?? it.obtain);
+    meta.push(obtainLabelFa(it.obtain) ?? it.obtain);
   }
   if (s.includeDeadline) {
     const dl = fmtDeadline(it);
     if (dl) meta.push(dl);
   }
   if (subHits.length) meta.push("اشتراک: " + subHits.join("/"));
-  if (detectLang(it.title) === "en" && s.langMode === "all") meta.push("EN");
+  if (detectLang(it.title) === "en" && s.langMode === "all") meta.push("انگلیسی");
   if (s.includeScore && it.score) meta.push(toFaDigits(Math.round(it.score)) + " امتیاز");
 
   lines.push(prefix + displayTitleFa(it).slice(0, 110));
@@ -1183,11 +1182,11 @@ status: string;
  * Push records and state
  * ------------------------------------------------------------------ */
 
-/** Compress a batch of items' match reasons into one summary line: strip the route prefix, normalize "high score 78" to "high score", then sort by count. */
+/** Compress a batch of items' match reasons into one summary line: strip the route prefix, normalize "امتیاز بالا ۷۸" to "امتیاز بالا", then sort by count. */
 function summarizeReasons(reasons: (string | undefined)[]): string {
   const counts = new Map<string, number>();
   for (const r of reasons) {
-    const key = (r?.trim() || "met batch high-score threshold").replace(/^\[[^\]]+\]\s*/, "").replace(/high score\s*\d+/, "high score");
+    const key = (r?.trim() || "به آستانهٔ امتیاز رسید").replace(/^\[[^\]]+\]\s*/, "").replace(/(?:high score|امتیاز بالا)\s*[0-9۰-۹]+/, "امتیاز بالا");
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return [...counts.entries()]
