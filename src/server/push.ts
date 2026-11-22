@@ -1271,6 +1271,7 @@ export function previewPush(limit = 6): {
     ai: number;
     obtain: number;
     route: number;
+    interest: number;
     lowScore: number;
   };
 } {
@@ -1324,6 +1325,7 @@ published_at: string | null;
     ai: 0,
     obtain: 0,
     route: 0,
+    interest: 0,
     lowScore: 0,
   };
   const deduper = s.dedupeByTitle ? new TitleDeduper(rows, recentPushedSeeds(true)) : null;
