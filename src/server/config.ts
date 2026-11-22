@@ -52,7 +52,8 @@ export const config = {
   dailyCron: str("DAILY_CRON", "30 8 * * *"),
   enableScheduler: bool("ENABLE_SCHEDULER", true),
 
-  dailyTopN: num("DAILY_TOP_N", 12),
+  dailyTopN: num("DAILY_TOP_N", 400),
+  /** Public site URL, appended as a footer link to every digest message when set */
   publicBaseUrl: str("PUBLIC_BASE_URL"),
   pushChannel: str("PUSH_CHANNEL", "none"),
   telegramBotToken: str("TELEGRAM_BOT_TOKEN"),

@@ -19,7 +19,13 @@ export type TelegramTarget = {
  * Single send entry point: the global Bot and the personal Bots share one implementation;
  * they differ only in where token / chat_id come from (config, or decrypted from user_push_configs).
  */
-export async function sendTelegramWith(target: TelegramTarget, text: string): Promise<void> {
+export type SendOptions = { parseMode?: "HTML" | "Markdown" };
+
+export async function sendTelegramWith(
+  target: TelegramTarget,
+  text: string,
+  opts: SendOptions = {},
+): Promise<void> {
   const base = (target.apiBase ?? config.telegramApiBase).replace(/\/+$/, "");
   const url = base + "/bot" + target.botToken + "/sendMessage";
   const init: RequestInit & { dispatcher?: unknown } = {
@@ -29,6 +35,7 @@ export async function sendTelegramWith(target: TelegramTarget, text: string): Pr
       chat_id: target.chatId,
       text,
       disable_web_page_preview: true,
+      ...(opts.parseMode ? { parse_mode: opts.parseMode } : {}),
     }),
     signal: AbortSignal.timeout(15_000),
   };
@@ -46,10 +53,11 @@ export async function sendTelegramWith(target: TelegramTarget, text: string): Pr
   if (!res.ok) throw new Error("Telegram HTTP " + res.status + " " + (await res.text()).slice(0, 150));
 }
 
-export async function sendTelegram(text: string): Promise<void> {
+export async function sendTelegram(text: string, opts: SendOptions = {}): Promise<void> {
   await sendTelegramWith(
     { botToken: config.telegramBotToken, chatId: config.telegramChatId },
     text,
+    opts,
   );
 }
 

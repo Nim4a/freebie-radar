@@ -129,26 +129,74 @@ function daysLeft(iso: string | null): string | null {
   return "ends in " + d + " days";
 }
 
+const TG_TEXT_LIMIT = 4000;
+/** Room for the header line + the footer added to every message */
+const TG_HEADER_RESERVE = 60;
+
+function htmlEscape(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Telegram HTML mode keeps the URL inside href, so a line costs only its title */
+function itemLine(it: DigestItem, index: number, titleCap: number): string {
+  const raw = (displayTitle(it) || "(untitled)").replace(/\s+/g, " ").trim();
+  const title = raw.length > titleCap ? raw.slice(0, titleCap - 1).trimEnd() + "…" : raw;
+  return index + '. <a href="' + htmlEscape(it.url).replace(/"/g, "&quot;") + '">' + htmlEscape(title) + "</a>";
+}
+
+function digestHeader(count: number, date: Date, part = 1, parts = 1): string {
+  const label = `${date.getMonth() + 1}/${date.getDate()}`;
+  const tail = parts > 1 ? ` (${part}/${parts})` : "";
+  return "🛰 Radar · " + label + " — " + count + " items" + tail;
+}
+
+/**
+ * Packs EVERY item into as few Telegram messages as the 4096-char cap allows.
+ * One single message is the normal case; only an unusually heavy day spills over.
+ */
+function packDigest(items: DigestItem[], date: Date, limit: number, titleCap: number): string[] {
+  const footer = config.publicBaseUrl ? "\n🔗 All: " + config.publicBaseUrl : "";
+  const budget = Math.max(500, limit - footer.length - TG_HEADER_RESERVE);
+  const chunks: string[] = [];
+  let lines: string[] = [];
+  let used = 0;
+  for (let i = 0; i < items.length; i += 1) {
+    const it = items[i];
+    if (!it) continue;
+    const line = itemLine(it, i + 1, titleCap);
+    if (lines.length && used + line.length > budget) {
+      chunks.push(lines.join("\n"));
+      lines = [];
+      used = 0;
+    }
+    lines.push(line);
+    used += line.length + 1;
+  }
+  if (lines.length) chunks.push(lines.join("\n"));
+  if (!chunks.length) chunks.push("");
+  const parts = chunks.length;
+  return chunks.map(
+    (body, idx) => digestHeader(items.length, date, idx + 1, parts) + footer + "\n\n" + body,
+  );
+}
+
+/** Try progressively shorter titles first: a trimmed title beats a second message */
+export function buildDigestMessages(items: DigestItem[], date = new Date(), limit = TG_TEXT_LIMIT): string[] {
+  let packed: string[] = [];
+  for (const cap of [92, 72, 56]) {
+    packed = packDigest(items, date, limit, cap);
+    if (packed.length <= 1) return packed;
+  }
+  return packed;
+}
+
 export function formatDigest(items: DigestItem[], date = new Date()): string {
   const label = `${date.getMonth() + 1}/${date.getDate()}`;
   if (!items.length) return "🛰 Resource Radar · " + label + "\n\nNo new claimable resources today, see you tomorrow.";
-  const lines = ["🛰 Resource Radar · " + label + " — " + items.length + " picks", ""];
-  items.forEach((it, i) => {
-    const cat = it.category ? (CATEGORY_LABEL[it.category as keyof typeof CATEGORY_LABEL] ?? it.category) : "Other";
-    const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? KIND_LABEL[it.kind as ContentKind] : null;
-    const exp = daysLeft(it.expires_at);
-    const meta = [sourceLabel(it.source_id), kindTag, cat, exp].filter(Boolean).join(" · ");
-    lines.push(i + 1 + ". " + displayTitle(it).slice(0, 100));
-    lines.push("   " + meta);
-    lines.push("   " + it.url);
-    lines.push("");
-  });
-  lines.push("Source: Resource Radar multi-source aggregation");
-  return lines.join("\n");
+  return buildDigestMessages(items, date).join("\n\n");
 }
 
-
-export type DailyResult = { date: string; count: number; text: string; pushed: boolean; skippedReason?: string };
+export type DailyResult = { date: string; count: number; text: string; pushed: boolean; parts?: number; skippedReason?: string };
 
 export async function runDaily(options: { dryRun?: boolean; date?: Date; log?: (m: string) => void } = {}): Promise<DailyResult> {
   const log = options.log ?? ((m: string) => console.log(m));
@@ -157,13 +205,14 @@ export async function runDaily(options: { dryRun?: boolean; date?: Date; log?: (
   const items = pickDaily(date);
   // The digest is the main English surface: make sure the picks are rendered in English
   // even for items collected minutes before this run.
-  await hydrateTranslations(items, { max: 40, timeoutMs: 30_000 });
-  const text = formatDigest(items, date);
+  await hydrateTranslations(items, { max: 40, timeoutMs: 45_000 });
+  const messages = buildDigestMessages(items, date);
+  const text = messages.join("\n\n");
 
   if (options.dryRun) {
-    log("[daily] dry-run " + key + " items=" + items.length);
+    log("[daily] dry-run " + key + " items=" + items.length + " parts=" + messages.length);
     log(text);
-    return { date: key, count: items.length, text, pushed: false, skippedReason: "dry-run" };
+    return { date: key, count: items.length, text, parts: messages.length, pushed: false, skippedReason: "dry-run" };
   }
 
   if (config.pushChannel === "none") {
@@ -171,28 +220,28 @@ export async function runDaily(options: { dryRun?: boolean; date?: Date; log?: (
       "INSERT INTO digests (date, item_ids, payload, created_at, pushed_at) VALUES (?, ?, ?, ?, NULL) ON CONFLICT(date) DO UPDATE SET item_ids = excluded.item_ids, payload = excluded.payload",
       key,
       JSON.stringify(items.map((i) => i.id)),
-      JSON.stringify({ text, count: items.length }),
+      JSON.stringify({ text, count: items.length, parts: messages.length }),
       new Date().toISOString(),
     );
     log("[daily] " + key + " generated " + items.length + " items (PUSH_CHANNEL=none, stored only)");
-    return { date: key, count: items.length, text, pushed: false, skippedReason: "push disabled" };
+    return { date: key, count: items.length, text, parts: messages.length, pushed: false, skippedReason: "push disabled" };
   }
 
   if (!config.telegramBotToken || !config.telegramChatId) {
     throw new Error("PUSH_CHANNEL=telegram but TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID is missing");
   }
 
-  await sendTelegram(text);
+  for (const part of messages) await sendTelegram(part, { parseMode: "HTML" });
   run(
     "INSERT INTO digests (date, item_ids, payload, created_at, pushed_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(date) DO UPDATE SET item_ids = excluded.item_ids, payload = excluded.payload, pushed_at = excluded.pushed_at",
     key,
     JSON.stringify(items.map((i) => i.id)),
-    JSON.stringify({ text, count: items.length }),
+    JSON.stringify({ text, count: items.length, parts: messages.length }),
     new Date().toISOString(),
     new Date().toISOString(),
   );
-  log("[daily] " + key + " pushed " + items.length + " items to Telegram");
-  return { date: key, count: items.length, text, pushed: true };
+  log("[daily] " + key + " pushed " + items.length + " items to Telegram (" + messages.length + " message(s))");
+  return { date: key, count: items.length, text, parts: messages.length, pushed: true };
 }
 
 export function lastDigests(limit = 10) {
