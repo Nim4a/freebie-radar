@@ -8,7 +8,7 @@ import { getAiSettings } from "./enrich/ai-settings.ts";
 import { displayTitleFa, hydrateTranslations } from "./enrich/translate.ts";
 import { kindLabelFa, obtainLabelFa } from "./tg-labels.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
-import { passesInterest } from "./enrich/interest.ts";
+import { INTEREST_CATEGORIES, passesInterest } from "./enrich/interest.ts";
 import { packItemMessages, toFaDigits } from "./tg-pack.ts";
 import { sendTelegram } from "./telegram.ts";
 import type { FreshItem } from "./collectors/index.ts";
@@ -394,6 +394,32 @@ export function kindAllowed(kind: string | null | undefined, allow: string[]): b
   return allow.includes(kind ?? "freebie");
 }
 
+/**
+ * The ask is *free* AI / domain / VPS / cloud, and sources file those as "deal" or "info"
+ * (a free-domain registration, a new free model on OpenRouter, a free-tier VPS) rather than
+ * as "freebie". Requiring kind=freebie left 2 candidates out of 89 core-category items, so
+ * the weekly digest went out empty. Widen the kind gate only for a core-category item that
+ * is genuinely free; the interest gate above still rejects every off-topic bucket and noise.
+ */
+export function coreFreeKindAllowed(
+  item: {
+    kind?: string | null;
+    category?: string | null;
+    obtain?: string | null;
+    price?: number | null;
+    isFree?: boolean;
+  },
+  allow: string[],
+): boolean {
+  if (kindAllowed(item.kind, allow)) return true;
+  const cat = String(item.category ?? "").trim().toLowerCase();
+  if (!INTEREST_CATEGORIES.includes(cat)) return false;
+  if (!(item.obtain === "free" || item.isFree === true || (typeof item.price === "number" && item.price <= 0))) {
+    return false;
+  }
+  return item.kind === "deal" || item.kind === "info";
+}
+
 export function matchPushRoute(
   item: {
     title: string;
@@ -411,7 +437,7 @@ export function matchPushRoute(
   if (!enabled.length) return null;
   const hay = (item.title + " " + (item.summary ?? "")).toLowerCase();
   for (const r of enabled) {
-    if (!kindAllowed(item.kind, r.kinds)) continue;
+    if (!coreFreeKindAllowed(item, r.kinds)) continue;
     if (!categoryAllowed(item.category, r.categories)) continue;
     if (!obtainAllowed(item.obtain, r.obtainModes)) continue;
     if (!priceAllowed(item, r.maxPrice)) continue;
@@ -475,7 +501,7 @@ export function checkPushFilter(
     return matchPushRoute(item, s.routes) ? null : "route";
   }
 
-  if (!kindAllowed(item.kind, s.kinds ?? [])) return "kind";
+  if (!coreFreeKindAllowed(item, s.kinds ?? [])) return "kind";
   if (!categoryAllowed(item.category, s.categories)) return "category";
   if (!priceAllowed(item, s.maxPrice)) return "price";
   if (!obtainAllowed(item.obtain, s.obtainModes)) return "obtain";

@@ -151,3 +151,37 @@ test("预览与真实推送共用同一套上限算法：能发几条、顺延�
   assert.equal(pv.batch.length, 0, "超出展示上限的即时条目不应漏进攒批预览框");
 });
 
+test("free AI / domain / VPS posts tagged deal or info still pass the kind gate", async () => {
+  const { coreFreeKindAllowed, passesPushFilters } = await import("../src/server/push.ts");
+  // the sources file free AI / domain / VPS as "deal" | "info" — those must reach the digest
+  assert.equal(coreFreeKindAllowed({ kind: "deal", category: "vps", obtain: "free" }, ["freebie"]), true);
+  assert.equal(coreFreeKindAllowed({ kind: "info", category: "domain", obtain: "free", isFree: true }, ["freebie"]), true);
+  assert.equal(coreFreeKindAllowed({ kind: "deal", category: "ai", obtain: null, price: 0 }, ["freebie"]), true);
+  // never widen outside the core categories, never for noise, never for a paid post
+  assert.equal(coreFreeKindAllowed({ kind: "deal", category: "pan", obtain: "free" }, ["freebie"]), false);
+  assert.equal(coreFreeKindAllowed({ kind: "noise", category: "vps", obtain: "free" }, ["freebie"]), false);
+  assert.equal(coreFreeKindAllowed({ kind: "deal", category: "vps", obtain: "paid" }, ["freebie"]), false);
+  assert.equal(coreFreeKindAllowed({ kind: "info", category: "game", obtain: "free" }, ["freebie"]), false);
+  // kind=freebie keeps behaving exactly as before, everywhere
+  assert.equal(coreFreeKindAllowed({ kind: "freebie", category: "pan", obtain: "free" }, ["freebie"]), true);
+  const settings = { ...DEFAULT_SETTINGS, maxAgeHours: 240, dedupeByTitle: false };
+  assert.equal(
+    passesPushFilters(
+      {
+        sourceId: "v2ex-cloud",
+        title: "Free VPS trial with 1 vCPU and 10GB traffic",
+        score: 90,
+        codes: [],
+        isFree: true,
+        aiKeep: true,
+        kind: "deal",
+        category: "vps",
+        obtain: "free",
+        publishedAt: new Date().toISOString(),
+      },
+      settings,
+    ),
+    true,
+    "a free VPS deal passes the shared push+digest filter",
+  );
+});
