@@ -50,6 +50,8 @@ export const config = {
 
   collectCron: str("COLLECT_CRON", "0 */2 * * *"),
   dailyCron: str("DAILY_CRON", "30 8 * * *"),
+  /** Weekly digest: Monday 06:00 in server time; set WEEKLY_CRON="" to disable */
+  weeklyCron: str("WEEKLY_CRON", "0 6 * * 1"),
   enableScheduler: bool("ENABLE_SCHEDULER", true),
 
   dailyTopN: num("DAILY_TOP_N", 400),

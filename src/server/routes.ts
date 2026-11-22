@@ -1602,7 +1602,9 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
 
   app.post("/api/digests/weekly", async (c) => {
     try {
-      const result = await runWeekly({ dryRun: false });
+      // dryRun is opt-in: preview the exact weekly message without touching Telegram
+      const body = (await c.req.json().catch(() => ({}))) as { dryRun?: boolean };
+      const result = await runWeekly({ dryRun: body.dryRun === true });
       return c.json(result);
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);

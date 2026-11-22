@@ -11,7 +11,7 @@ import { config } from "./config.ts";
 import { getDb, migrate, run } from "./db.ts";
 import { registerApi, warmClusterCache } from "./routes.ts";
 import { startPushScheduler } from "./push.ts";
-import { digestExists, runDaily } from "./digest.ts";
+import { digestExists, runDaily, runWeekly, weekKey } from "./digest.ts";
 import { startIntervalScheduler, startScheduler } from "./cron.ts";
 import { getRetention, runCleanup } from "./retention.ts";
 import { ensureSources } from "./collectors/index.ts";
@@ -122,6 +122,15 @@ if (config.enableScheduler) {
       await pushUserDaily().catch((err) => {
         console.error("[user-push] personal daily digest failed:", err instanceof Error ? err.message : err);
       });
+    },
+    // Weekly digest: fired by WEEKLY_CRON, skipped when this week's digest is already stored
+    weekly: async () => {
+      const key = weekKey();
+      if (digestExists(key)) return;
+      await translatePending(config.dailyTopN * 3).catch((err) => {
+        console.error("[translate] pre-weekly pass failed:", err instanceof Error ? err.message : err);
+      });
+      await runWeekly({ date: new Date() });
     },
   });
 

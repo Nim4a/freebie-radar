@@ -97,7 +97,12 @@ export function stopIntervalScheduler(): void {
 let timer: NodeJS.Timeout | null = null;
 let lastKey = "";
 
-export function startScheduler(task: { collect: () => Promise<unknown>; daily: () => Promise<unknown>; log?: (m: string) => void }): void {
+export function startScheduler(task: {
+  collect: () => Promise<unknown>;
+  daily: () => Promise<unknown>;
+  weekly?: () => Promise<unknown>;
+  log?: (m: string) => void;
+}): void {
   if (timer) return;
   const log = task.log ?? ((m: string) => console.log(m));
   timer = setInterval(() => {
@@ -109,12 +114,16 @@ export function startScheduler(task: { collect: () => Promise<unknown>; daily: (
       log("[cron] triggering collection");
       task.collect().catch((e) => log(`[cron] collection failed: ${String(e)}`));
     }
+    if (config.enableScheduler && config.weeklyCron && matchCron(config.weeklyCron, now)) {
+      log("[cron] triggering weekly digest");
+      task.weekly?.().catch((e) => log(`[cron] weekly digest failed: ${String(e)}`));
+    }
     if (config.enableScheduler && matchCron(config.dailyCron, now)) {
       log("[cron] triggering daily digest");
       task.daily().catch((e) => log(`[cron] daily digest failed: ${String(e)}`));
     }
   }, 30_000);
-  log(`[cron] scheduler started collect="${config.collectCron}" daily="${config.dailyCron}"`);
+  log(`[cron] scheduler started collect="${config.collectCron}" daily="${config.dailyCron}" weekly="${config.weeklyCron}"`);
 }
 
 export function stopScheduler(): void {
