@@ -1,0 +1,27 @@
+name: deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger cloady deploy
+        env:
+          CLOADY_TOKEN: ${{ secrets.CLOADY_TOKEN }}
+          WS: workspace-zb9y38
+          APP: freebie-radar
+        run: |
+          set -e
+          curl -sf -X POST -H "Authorization: Bearer $CLOADY_TOKEN" \
+            "https://cloady.com/api/workspaces/$WS/apps/$APP/deploy?env=production&region=uk1"
+          echo
+          for i in $(seq 1 24); do
+            sleep 15
+            L=$(curl -s -H "Authorization: Bearer $CLOADY_TOKEN" \
+              "https://cloady.com/api/workspaces/$WS/apps/$APP/deploys?env=production&region=uk1" \
+              | jq -r '.deploys[0] | "\(.status) \(.sha[0:7]) \(.commitMsg[0:48])"')
+            echo "[$((i*15))s] $L"
+            case "$L" in building*) ;; *) break ;; esac
+          done
