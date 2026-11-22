@@ -30,6 +30,8 @@ export type DigestItem = {
   ai_quality?: number | null;
   /** English rendering of `title` (display only) */
   title_en?: string | null;
+  title_fa?: string | null;
+  summary_fa?: string | null;
   /** English rendering of `summary` (display only) */
   summary_en?: string | null;
 };
@@ -76,7 +78,7 @@ export function pickDaily(date = new Date(), topN = config.dailyTopN): DigestIte
   const now = new Date().toISOString();
 
   const rows = all<DigestItem>(
-    "SELECT id, source_id, title, title_en, summary_en, url, url_key AS urlKey, category, kind, score, expires_at, published_at, price, is_free, obtain, ai, codes FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 400",
+    "SELECT id, source_id, title, title_en, summary_en, title_fa, summary_fa, url, url_key AS urlKey, category, kind, score, expires_at, published_at, price, is_free, obtain, ai, codes FROM items WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY score DESC, COALESCE(published_at, first_seen_at) DESC LIMIT 400",
     lookback,
     now,
   );
@@ -260,7 +262,7 @@ export function pickWeekly(date = new Date(), topN = 20): DigestItem[] {
   const start = new Date(end.getTime() - WEEK_DAYS * 86_400_000);
   const now = new Date().toISOString();
   const rows = all<DigestItem>(
-    `SELECT id, source_id, title, title_en, summary_en, url, url_key AS urlKey, category, kind, score, expires_at, published_at,
+    `SELECT id, source_id, title, title_en, summary_en, title_fa, summary_fa, url, url_key AS urlKey, category, kind, score, expires_at, published_at,
             price, is_free, obtain, ai, codes, ai_quality
        FROM items
       WHERE status = 'active'
@@ -323,7 +325,7 @@ export function formatWeekly(items: DigestItem[], date = new Date()): string {
   const catLine = [...byCategory.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6)
-    .map(([k, n]) => k + " " + n)
+    .map(([k, n]) => k + " " + toFaDigits(n))
     .join(" · ");
 
   const lines = [head, toFaDigits(items.length) + " مورد · فقط موارد تأییدشده که منقضی نشده‌اند", ""];

@@ -791,7 +791,7 @@ export function parseAiMeta(aiRaw: string | null): { aiKeep: boolean | null; aiR
 
 export function itemBlock(sourceId: string, it: FreshItem, s: PushSettings, seq?: number, subHits: string[] = []): string[] {
   const lines: string[] = [];
-  const prefix = seq === undefined ? "" : seq + ". ";
+  const prefix = seq === undefined ? "" : toFaDigits(seq) + ". ";
   const meta: string[] = [sourceLabel(sourceId)];
   const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? kindLabelFa(it.kind) : null;
   if (kindTag) meta.push(kindTag);
@@ -834,7 +834,7 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
   });
   const deduper = s.dedupeByTitle ? new TitleDeduper(candidates, recentPushedSeeds(true)) : null;
   // Fresh items are pushed within seconds of collection, before the background pass has
-  // seen them: one bounded call so the message still goes out in English.
+  // seen them: one bounded call so the message still goes out in Persian.
   await hydrateTranslations(candidates, { max: 12, timeoutMs: 20_000 });
 
   const instant: { it: FreshItem; reason: string; subHits: string[]; route: PushRoute | null }[] = [];
@@ -861,7 +861,7 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
         item: it,
         subHits,
         route,
-        reason: d.reason || (route ? `[${route.name}] ` : "") + "met batch high-score threshold",
+        reason: d.reason || (route ? `[${route.name}] ` : "") + "به آستانهٔ امتیاز رسید",
       });
       deduper?.markSeen(it);
     }

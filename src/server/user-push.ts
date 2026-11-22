@@ -18,6 +18,7 @@ import {
 import { isBlocked, type BlockRule } from "./enrich/blocklist.ts";
 import { TitleDeduper, type DedupeEntry } from "./enrich/index.ts";
 import { matchesEntryNoise } from "./enrich/ai.ts";
+import { toFaDigits } from "./tg-pack.ts";
 import { hydrateTranslations } from "./enrich/translate.ts";
 import { URGENT, hasValueSignal } from "./enrich/noise.ts";
 import type { FreshItem } from "./collectors/index.ts";
@@ -363,14 +364,14 @@ function decideForUser(item: FreshItem, s: PushSettings, subHits: string[], rout
   const routeTag = route ? `[${route.name}] ` : "";
   if (route && !route.instant) return { push: false, reason: "", urgent: false, route };
   if (s.prioritizeSubscribed && subHits.length > 0) {
-    return { push: true, reason: routeTag + "subscription hit: " + subHits.join("/"), urgent: true, route };
+    return { push: true, reason: routeTag + "اشتراک: " + subHits.join("/"), urgent: true, route };
   }
-  if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: routeTag + "has code", urgent: true, route };
+  if (s.instantOnCodes && item.codes.length > 0) return { push: true, reason: routeTag + "کد دارد", urgent: true, route };
   if (s.instantOnUrgent && URGENT.test(item.title) && item.score >= 40) {
-    return { push: true, reason: routeTag + "limited/limited-time", urgent: true, route };
+    return { push: true, reason: routeTag + "زمان محدود", urgent: true, route };
   }
   const gate = route ? Math.max(s.instantScore, route.minScore) : s.instantScore;
-  if (item.score >= gate) return { push: true, reason: routeTag + "high score " + Math.round(item.score), urgent: false, route };
+  if (item.score >= gate) return { push: true, reason: routeTag + "امتیاز بالا " + toFaDigits(Math.round(item.score)), urgent: false, route };
   return { push: false, reason: "", urgent: false, route };
 }
 
@@ -494,7 +495,7 @@ async function dispatchForUser(user: ActiveUser, sourceId: string, fresh: FreshI
     }
     if (quiet && s.quietAction === "drop") continue;
     if (canBatchForUser(it, s, d)) {
-      batched.push({ it, reason: d.reason || (route ? `[${route.name}] ` : "") + "met batch high-score threshold", subHits, route });
+      batched.push({ it, reason: d.reason || (route ? `[${route.name}] ` : "") + "به آستانهٔ امتیاز رسید", subHits, route });
       deduper?.markSeen(it);
     }
   }
@@ -522,7 +523,7 @@ async function dispatchForUser(user: ActiveUser, sourceId: string, fresh: FreshI
   let sent = 0;
   for (const { it, reason, subHits, route } of picked) {
     if (!recordDelivery(user.userId, it.id, "queued", null, reason, route?.name ?? null)) continue;
-    const text = [userPrefix(route, s, "⚡ New · ") + reason, "", ...itemBlock(sourceId, it, s, undefined, subHits)].join("\n");
+    const text = [userPrefix(route, s, "⚡ تازه · ") + reason, "", ...itemBlock(sourceId, it, s, undefined, subHits)].join("\n");
     try {
       await sendToUser(user, text);
       markSent(user.userId, [it.id]);
@@ -669,7 +670,7 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
     const subHits = matchUserSubscriptions(item, subKeywords);
     const route = hasRoutes ? matchRoute({ ...item, sourceId: r.source_id }, s.routes) : null;
     if (hasRoutes && !route) continue;
-    picked.push({ row: r, item, subHits, route, reason: q.reason ?? "batch summary" });
+    picked.push({ row: r, item, subHits, route, reason: q.reason ?? "خلاصهٔ دسته" });
   }
   const pickedIds = new Set(picked.map((p) => p.item.id));
   for (const q of rows) {
