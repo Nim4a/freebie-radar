@@ -40,7 +40,8 @@ const OFF_TOPIC_TITLE: RegExp[] = [
   /\bclash\b/i, /\bv2ray\b/i, /\bv2fly\b/i, /\bxray\b/i, /\bvmess\b/i, /\bvless\b/i,
   /\btrojan\b/i, /\bshadowsocks\b/i, /\bssr\b/i, /\bhysteria\b/i, /\bsing-?box\b/i,
   /\bnaiveproxy\b/i, /\bvpngate\b/i, /\bpsiphon\b/i, /\bwarp\s*(plus|\+)\b/i,
-  /\bvpn\b/i, /\bfree\s+(proxy|vpn|node)s?\b/i, /\bproxy\s+(node|list|trial)s?\b/i,
+  /\bvpn\b/i, /\bproxy\b/i, /\bproxies\b/i,
+  /\bfree\s+(proxy|vpn|node)s?\b/i, /\bproxy\s+(node|list|trial)s?\b/i,
   // game giveaways / launchers
   /游戏/, /手游/, /页游/, /\bsteam\b/i, /\bepic\s*games\b/i, /\bgog\.com\b/i,
   /\bhumble\s*bundle\b/i, /\bitch\.io\b/i, /\bgame\s*pass\b/i, /\bprime\s*gaming\b/i,
@@ -72,9 +73,9 @@ const TOPIC_WORDS: RegExp[] = [
   // AI / model / API credit
   /\bai\b/i, /\bllm\b/i, /\bgpt\b/i, /\bopenai\b/i, /\bchatgpt\b/i, /\bclaude\b/i,
   /\banthropic\b/i, /\bgemini\b/i, /\bdeepseek\b/i, /\bqwen\b/i, /\bmistral\b/i,
-  /\bgrok\b/i, /\bcopilot\b/i, /\bmidjourney\b/i, /\bmodel\b/i, /\bapi\b/i,
-  /\bcredits?\b/i, /\btokens?\b/i, /\bgpu\b/i, /\bagents?\b/i, /\bmcp\b/i,
-  /算力/, /大模型/, /模型/, /额度/, /token/i, /\bai\b/,
+  /\bgrok\b/i, /\bcopilot\b/i, /\bmidjourney\b/i, /\bapi\b/i,
+  /\bcredits?\b/i, /\btokens?\b/i, /\bgpu\b/i, /\bmcp\b/i,
+  /算力/, /大模型/, /模型/, /额度/, /token/i,
   // domains / DNS / certificates / CDN
   /\bdomains?\b/i, /\bdns\b/i, /域名/, /\bsubdomain\b/i, /\bssl\b/i,
   /\bcertificat\w*/i, /\bcloudflare\b/i, /\bnamesilo\b/i, /\bnamecheap\b/i,
