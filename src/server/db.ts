@@ -542,6 +542,23 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS idx_items_untranslated
     ON items(id) WHERE translated_at IS NULL;
   `,
+
+  /* v?: Persian rendering for the Telegram surfaces. Same rule as the English layer: the scraped
+     Chinese source is never overwritten (matchers keep reading it) — title_fa/summary_fa only feed
+     the Telegram digest and pushes, so those read Persian while the web/RSS stay English. */
+  `
+  ALTER TABLE items ADD COLUMN title_fa TEXT;
+  `,
+  `
+  ALTER TABLE items ADD COLUMN summary_fa TEXT;
+  `,
+  `
+  ALTER TABLE items ADD COLUMN translated_fa_at TEXT;
+  `,
+  `
+  CREATE INDEX IF NOT EXISTS idx_items_untranslated_fa
+    ON items(id) WHERE translated_fa_at IS NULL;
+  `,
 ];
 
 export function dbPath(): string {

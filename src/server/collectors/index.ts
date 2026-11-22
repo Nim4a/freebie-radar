@@ -557,6 +557,10 @@ export type FreshItem = {
   title_en?: string | null;
   /** English rendering of `summary`. Display only. */
   summary_en?: string | null;
+  /** Persian rendering of `title` for the Telegram surfaces (see enrich/translate.ts). Display only. */
+  title_fa?: string | null;
+  /** Persian rendering of `summary` for the Telegram surfaces. Display only. */
+  summary_fa?: string | null;
 };
 
 /** Use AI's obtain when provided, otherwise fall back to keyword heuristics. */

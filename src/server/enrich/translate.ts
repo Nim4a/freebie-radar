@@ -1,5 +1,5 @@
 /**
- * English rendering of scraped Chinese titles and summaries.
+ * English + Persian rendering of scraped Chinese titles and summaries.
  *
  * The scraped `items.title` / `items.summary` columns are never overwritten: every matcher in the app
  * (noise filter, block rules, push keyword filters, subscription matching, dedupe) keeps reading the
@@ -36,6 +36,10 @@ export type TranslateStats = {
   failed: number;
   /** items still waiting for a translation after this pass */
   pending: number;
+  /** rows that picked up a Persian title in this pass */
+  translatedFa?: number;
+  /** items still waiting for the Persian rendering after this pass */
+  pendingFa?: number;
   errors: string[];
 };
 
@@ -78,13 +82,17 @@ export function translationStatus(): {
   lastStats: TranslateStats | null;
   pending: number;
   done: number;
+  pendingFa: number;
+  doneFa: number;
   total: number;
 } {
   const t = translateTarget();
-  const counts = get<{ pending: number; done: number; total: number }>(
+  const counts = get<{ pending: number; done: number; pendingFa: number; doneFa: number; total: number }>(
     `SELECT
        SUM(CASE WHEN translated_at IS NULL THEN 1 ELSE 0 END) AS pending,
        SUM(CASE WHEN translated_at IS NOT NULL THEN 1 ELSE 0 END) AS done,
+       SUM(CASE WHEN translated_fa_at IS NULL THEN 1 ELSE 0 END) AS pendingFa,
+       SUM(CASE WHEN translated_fa_at IS NOT NULL THEN 1 ELSE 0 END) AS doneFa,
        COUNT(*) AS total
      FROM items`,
   );
@@ -96,17 +104,21 @@ export function translationStatus(): {
     lastStats,
     pending: counts?.pending ?? 0,
     done: counts?.done ?? 0,
+    pendingFa: counts?.pendingFa ?? 0,
+    doneFa: counts?.doneFa ?? 0,
     total: counts?.total ?? 0,
   };
 }
 
 const SYSTEM_PROMPT =
-  "You translate Chinese listings from a freebies/deals aggregator into natural English. " +
-  "Rules: headline style, concise, no surrounding quotes, no commentary; keep brand names, product " +
-  "names, version numbers and URLs as they are; keep the meaning of the original, never invent offers. " +
-  "Titles stay under 70 characters. Summaries become one or two plain English sentences. " +
-  'Answer with ONLY a JSON array, no markdown fence and no prose: [{"i":0,"t":"english title","s":"english summary"}]. ' +
-  'Omit "s" when the input had no summary.';
+  "You translate Chinese listings from a freebies/deals aggregator into natural English AND natural " +
+  "Persian (Farsi). Rules: headline style, concise, no surrounding quotes, no commentary; keep brand " +
+  "names, product names, version numbers and URLs as they are; keep the meaning of the original, never " +
+  "invent offers. English titles stay under 70 characters, Persian titles under 70 characters too. " +
+  "Summaries become one or two plain sentences in each language. Never leave Chinese characters in any " +
+  'field. Answer with ONLY a JSON array, no markdown fence and no prose: ' +
+  '[{"i":0,"t":"english title","s":"english summary","f":"عنوان فارسی","g":"خلاصهٔ فارسی"}]. ' +
+  'Omit "s"/"g" when the input had no summary.';
 
 function buildUserPrompt(rows: PendingRow[]): string {
   const payload = rows.map((r, i) => ({
@@ -114,11 +126,13 @@ function buildUserPrompt(rows: PendingRow[]): string {
     title: r.title,
     ...(r.summary && r.summary.trim() ? { summary: r.summary.trim().slice(0, 600) } : {}),
   }));
-  return `Translate these ${payload.length} entries:\n${JSON.stringify(payload, null, 0)}`;
+  return `Translate these ${payload.length} entries into English (t/s) and Persian (f/g):\n${JSON.stringify(payload, null, 0)}`;
 }
 
 /** Tolerant JSON-array parse: accepts a bare array, a ```json fence, or prose around the array. */
-function parseTranslationArray(text: string): Array<{ i: number; t: string; s?: string }> | null {
+type ParsedRow = { i: number; t: string; s?: string; f?: string; g?: string };
+
+function parseTranslationArray(text: string): ParsedRow[] | null {
   let s = (text ?? "").trim();
   if (!s) return null;
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -134,15 +148,17 @@ function parseTranslationArray(text: string): Array<{ i: number; t: string; s?: 
     return null;
   }
   if (!Array.isArray(parsed)) return null;
-  const out: Array<{ i: number; t: string; s?: string }> = [];
+  const out: ParsedRow[] = [];
   for (const raw of parsed) {
     if (!raw || typeof raw !== "object") continue;
     const o = raw as Record<string, unknown>;
     const i = typeof o.i === "number" ? o.i : typeof o.i === "string" ? Number(o.i) : NaN;
     const t = typeof o.t === "string" ? o.t.trim() : "";
-    if (!Number.isFinite(i) || !t) continue;
+    const f = typeof o.f === "string" ? o.f.trim() : "";
+    if (!Number.isFinite(i) || (!t && !f)) continue;
     const s = typeof o.s === "string" ? o.s.trim() : "";
-    out.push({ i, t, ...(s ? { s } : {}) });
+    const g = typeof o.g === "string" ? o.g.trim() : "";
+    out.push({ i, t, ...(s ? { s } : {}), ...(f ? { f } : {}), ...(g ? { g } : {}) });
   }
   return out.length ? out : null;
 }
@@ -153,6 +169,17 @@ function usableTranslation(text: string, max: number): boolean {
   if (!t) return false;
   if (CJK.test(t)) return false;
   return t.length <= max;
+}
+
+/** Persian child of usableTranslation: must carry Persian script, no CJK, and stay near the cap. */
+const PERSIAN_SCRIPT = /[\u0600-\u06ff]/;
+function usablePersian(text: string, max: number): boolean {
+  const t = (text ?? "").trim();
+  if (!t) return false;
+  if (CJK.test(t)) return false;
+  if (!PERSIAN_SCRIPT.test(t)) return false;
+  // Persian renders longer than English for the same meaning — allow ~60% headroom.
+  return t.length <= Math.round(max * 1.6);
 }
 
 type ChatReply = { ok: true; text: string } | { ok: false; error: string; retryable: boolean };
@@ -225,10 +252,13 @@ export async function translatePending(limit?: number): Promise<TranslateStats> 
   };
   const pendingCount = () =>
     get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE translated_at IS NULL")?.n ?? 0;
+  const pendingFaCount = () =>
+    get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE translated_fa_at IS NULL")?.n ?? 0;
 
   if (!target) {
     stats.errors.push("no translation endpoint configured (TRANSLATE_BASE_URL or AI_BASE_URL)");
     stats.pending = pendingCount();
+    stats.pendingFa = pendingFaCount();
     lastStats = stats;
     lastRunAt = new Date().toISOString();
     return stats;
@@ -236,7 +266,7 @@ export async function translatePending(limit?: number): Promise<TranslateStats> 
 
   const rows = all<PendingRow>(
     `SELECT id, title, summary FROM items
-      WHERE translated_at IS NULL
+      WHERE translated_at IS NULL OR translated_fa_at IS NULL
       ORDER BY (status = 'active') DESC, COALESCE(published_at, first_seen_at) DESC
       LIMIT ?`,
     max,
@@ -249,8 +279,8 @@ export async function translatePending(limit?: number): Promise<TranslateStats> 
     const title = (r.title ?? "").trim();
     const summary = (r.summary ?? "").trim();
     if (!CJK.test(title) && !CJK.test(summary)) {
-      // Already English (or pure numbers/symbols) — nothing for the model to do.
-      run("UPDATE items SET translated_at = ? WHERE id = ?", now, r.id);
+      // Already English (or pure numbers/symbols) — nothing for the model to do in either language.
+      run("UPDATE items SET translated_at = ?, translated_fa_at = ? WHERE id = ?", now, now, r.id);
       stats.skipped += 1;
       continue;
     }
@@ -287,26 +317,47 @@ export async function translatePending(limit?: number): Promise<TranslateStats> 
       const row = chunk[k];
       if (!row) continue;
       const hit = byIndex.get(k);
-      if (!hit || !usableTranslation(hit.t, MAX_TITLE_CHARS)) {
+      const titleEn = hit && usableTranslation(hit.t, MAX_TITLE_CHARS) ? hit.t.trim() : null;
+      const titleFa = hit && hit.f && usablePersian(hit.f, MAX_TITLE_CHARS) ? hit.f.trim() : null;
+      if (!titleEn && !titleFa) {
         stats.failed += 1;
         continue;
       }
       const summaryEn =
-        hit.s && usableTranslation(hit.s, MAX_SUMMARY_CHARS) ? hit.s.trim() : null;
-      run(
-        "UPDATE items SET title_en = ?, summary_en = COALESCE(?, summary_en), translated_at = ? WHERE id = ?",
-        hit.t.trim(),
-        summaryEn,
-        stamp,
-        row.id,
-      );
-      stats.translated += 1;
+        hit?.s && usableTranslation(hit.s, MAX_SUMMARY_CHARS) ? hit.s.trim() : null;
+      const summaryFa =
+        hit?.g && usablePersian(hit.g, MAX_SUMMARY_CHARS) ? hit.g.trim() : null;
+      try {
+        run(
+          `UPDATE items SET title_en = COALESCE(?, title_en), summary_en = COALESCE(?, summary_en),
+                            title_fa = COALESCE(?, title_fa), summary_fa = COALESCE(?, summary_fa),
+                            translated_at = COALESCE(?, translated_at),
+                            translated_fa_at = COALESCE(?, translated_fa_at)
+             WHERE id = ?`,
+          titleEn,
+          summaryEn,
+          titleFa,
+          summaryFa,
+          titleEn ? stamp : null,
+          titleFa ? stamp : null,
+          row.id,
+        );
+      } catch (err) {
+        stats.failed += 1;
+        if (stats.errors.length < 5) {
+          stats.errors.push(err instanceof Error ? err.message : String(err));
+        }
+        continue;
+      }
+      if (titleEn) stats.translated += 1;
+      if (titleFa) stats.translatedFa = (stats.translatedFa ?? 0) + 1;
     }
 
     if (i + batchSize < needModel.length) await sleep(PAUSE_BETWEEN_BATCHES_MS);
   }
 
   stats.pending = pendingCount();
+  stats.pendingFa = pendingFaCount();
   lastStats = stats;
   lastRunAt = new Date().toISOString();
   return stats;
@@ -366,27 +417,48 @@ export type TranslatableItem = {
   summary?: string | null;
   title_en?: string | null;
   summary_en?: string | null;
+  title_fa?: string | null;
+  summary_fa?: string | null;
 };
 
-export type DisplayText = { title: string; summary: string | null };
+export type DisplayText = {
+  title: string;
+  summary: string | null;
+  titleFa: string;
+  summaryFa: string | null;
+};
 
 const CACHE_MAX = 5_000;
 const displayCache = new Map<number, DisplayText>();
 
-function remember(id: number, titleEn: string | null | undefined, summaryEn: string | null | undefined): void {
+function remember(
+  id: number,
+  titleEn: string | null | undefined,
+  summaryEn: string | null | undefined,
+  titleFa?: string | null,
+  summaryFa?: string | null,
+): void {
   const title = (titleEn ?? "").trim();
-  if (!title) return;
+  const fa = (titleFa ?? "").trim();
+  if (!title && !fa) return;
   if (displayCache.size >= CACHE_MAX) {
     const oldest = displayCache.keys().next().value;
     if (oldest !== undefined) displayCache.delete(oldest);
   }
-  displayCache.set(id, { title, summary: (summaryEn ?? "").trim() || null });
+  displayCache.set(id, {
+    title,
+    summary: (summaryEn ?? "").trim() || null,
+    titleFa: fa,
+    summaryFa: (summaryFa ?? "").trim() || null,
+  });
 }
 
-/** Warm the cache from rows that already carry their English rendering. */
+/** Warm the cache from rows that already carry their English/Persian rendering. */
 export function seedTranslations(rows: TranslatableItem[]): void {
   for (const r of rows) {
-    if (typeof r.id === "number" && r.id > 0) remember(r.id, r.title_en, r.summary_en);
+    if (typeof r.id === "number" && r.id > 0) {
+      remember(r.id, r.title_en, r.summary_en, r.title_fa, r.summary_fa);
+    }
   }
 }
 
@@ -394,7 +466,7 @@ export function seedTranslations(rows: TranslatableItem[]): void {
 export function displayTitle(it: TranslatableItem): string {
   if (typeof it.id === "number") {
     const hit = displayCache.get(it.id);
-    if (hit) return hit.title;
+    if (hit?.title) return hit.title;
   }
   return (it.title_en ?? "").trim() || it.title;
 }
@@ -409,6 +481,32 @@ export function displaySummary(it: TranslatableItem): string | null {
   if (en) return en;
   const zh = (it.summary ?? "").trim();
   return zh || null;
+}
+
+/**
+ * Persian title for the Telegram surfaces (digest + push). Falls back through
+ * title_fa → the English rendering → the original Chinese title, so a message is
+ * never empty while the Persian backlog drains.
+ */
+export function displayTitleFa(it: TranslatableItem): string {
+  if (typeof it.id === "number") {
+    const hit = displayCache.get(it.id);
+    if (hit?.titleFa) return hit.titleFa;
+  }
+  const fa = (it.title_fa ?? "").trim();
+  if (fa) return fa;
+  return displayTitle(it);
+}
+
+/** Persian summary when we have one, the English rendering otherwise. */
+export function displaySummaryFa(it: TranslatableItem): string | null {
+  if (typeof it.id === "number") {
+    const hit = displayCache.get(it.id);
+    if (hit?.summaryFa) return hit.summaryFa;
+  }
+  const fa = (it.summary_fa ?? "").trim();
+  if (fa) return fa;
+  return displaySummary(it);
 }
 
 /**
@@ -432,11 +530,17 @@ export async function hydrateTranslations(
   if (unknown.length) {
     try {
       const placeholders = unknown.map(() => "?").join(",");
-      const rows = all<{ id: number; title_en: string | null; summary_en: string | null }>(
-        `SELECT id, title_en, summary_en FROM items WHERE id IN (${placeholders})`,
+      const rows = all<{
+        id: number;
+        title_en: string | null;
+        summary_en: string | null;
+        title_fa: string | null;
+        summary_fa: string | null;
+      }>(
+        `SELECT id, title_en, summary_en, title_fa, summary_fa FROM items WHERE id IN (${placeholders})`,
         ...unknown,
       );
-      for (const r of rows) remember(r.id, r.title_en, r.summary_en);
+      for (const r of rows) remember(r.id, r.title_en, r.summary_en, r.title_fa, r.summary_fa);
     } catch (err) {
       console.error("[translate] hydrate lookup failed:", err instanceof Error ? err.message : err);
     }
@@ -450,12 +554,19 @@ export async function hydrateTranslations(
   for (const it of items) {
     if (typeof it.id !== "number" || it.id <= 0 || seen.has(it.id)) continue;
     seen.add(it.id);
-    if (displayCache.has(it.id)) continue;
+    const cached = displayCache.get(it.id);
+    // Both renderings in hand — nothing to ask the model for.
+    if (cached?.title && cached.titleFa) continue;
     const title = (it.title ?? "").trim();
     const summary = (it.summary ?? "").trim();
     if (!CJK.test(title) && !CJK.test(summary)) {
       // Nothing to translate — cache the original so later calls skip the lookup.
-      displayCache.set(it.id, { title, summary: summary || null });
+      displayCache.set(it.id, {
+        title: cached?.title || (it.title_en ?? "").trim() || title,
+        summary: cached?.summary ?? ((it.summary_en ?? "").trim() || summary || null),
+        titleFa: cached?.titleFa || (it.title_fa ?? "").trim() || (it.title_en ?? "").trim() || title,
+        summaryFa: cached?.summaryFa ?? ((it.summary_fa ?? "").trim() || null),
+      });
       continue;
     }
     need.push({ id: it.id, title, summary: summary || null });
@@ -486,19 +597,29 @@ export async function hydrateTranslations(
     const row = need[k];
     if (!row) continue;
     const hit = byIndex.get(k);
-    if (!hit || !usableTranslation(hit.t, MAX_TITLE_CHARS)) continue;
-    const summaryEn = hit.s && usableTranslation(hit.s, MAX_SUMMARY_CHARS) ? hit.s.trim() : null;
+    const titleEn = hit && usableTranslation(hit.t, MAX_TITLE_CHARS) ? hit.t.trim() : null;
+    const titleFa = hit && hit.f && usablePersian(hit.f, MAX_TITLE_CHARS) ? hit.f.trim() : null;
+    if (!titleEn && !titleFa) continue;
+    const summaryEn = hit?.s && usableTranslation(hit.s, MAX_SUMMARY_CHARS) ? hit.s.trim() : null;
+    const summaryFa = hit?.g && usablePersian(hit.g, MAX_SUMMARY_CHARS) ? hit.g.trim() : null;
     try {
       run(
-        "UPDATE items SET title_en = ?, summary_en = COALESCE(?, summary_en), translated_at = ? WHERE id = ?",
-        hit.t.trim(),
+        `UPDATE items SET title_en = COALESCE(?, title_en), summary_en = COALESCE(?, summary_en),
+                          title_fa = COALESCE(?, title_fa), summary_fa = COALESCE(?, summary_fa),
+                          translated_at = COALESCE(?, translated_at),
+                          translated_fa_at = COALESCE(?, translated_fa_at)
+           WHERE id = ?`,
+        titleEn,
         summaryEn,
-        stamp,
+        titleFa,
+        summaryFa,
+        titleEn ? stamp : null,
+        titleFa ? stamp : null,
         row.id,
       );
     } catch (err) {
       console.error("[translate] hydrate write failed:", err instanceof Error ? err.message : err);
     }
-    remember(row.id, hit.t, summaryEn);
+    remember(row.id, titleEn, summaryEn, titleFa, summaryFa);
   }
 }

@@ -599,7 +599,9 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
     title: string;
     summary: string | null;
     title_en: string | null;
+    title_fa: string | null;
     summary_en: string | null;
+    summary_fa: string | null;
     url: string;
     category: string | null;
     kind: string | null;
@@ -614,7 +616,7 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
     ai: string | null;
     canonical_id: number | null;
   }>(
-    `SELECT id, source_id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain,
+    `SELECT id, source_id, title, summary, title_en, summary_en, title_fa, summary_fa, url, category, kind, score, codes, price, is_free, obtain,
             expires_at, published_at, status, ai, canonical_id
        FROM items WHERE id IN (${ph})`,
     ...ids,
@@ -658,7 +660,9 @@ async function flushOneUser(user: ActiveUser, force: boolean): Promise<number> {
       obtain: r.obtain,
       summary: r.summary,
       title_en: r.title_en,
+      title_fa: r.title_fa,
       summary_en: r.summary_en,
+      summary_fa: r.summary_fa,
       canonicalId: r.canonical_id,
     };
     if (!passesPushFilters({ ...item, sourceId: r.source_id }, s)) continue;
@@ -744,7 +748,9 @@ async function sendDailyDigest(user: ActiveUser): Promise<number> {
     title: string;
     summary: string | null;
     title_en: string | null;
+    title_fa: string | null;
     summary_en: string | null;
+    summary_fa: string | null;
     url: string;
     category: string | null;
     kind: string | null;
@@ -758,7 +764,7 @@ async function sendDailyDigest(user: ActiveUser): Promise<number> {
     ai: string | null;
     canonical_id: number | null;
   }>(
-    `SELECT id, source_id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain,
+    `SELECT id, source_id, title, summary, title_en, summary_en, title_fa, summary_fa, url, category, kind, score, codes, price, is_free, obtain,
             expires_at, published_at, ai, canonical_id
        FROM items
       WHERE status = 'active' AND COALESCE(published_at, first_seen_at) >= ?
@@ -796,7 +802,9 @@ async function sendDailyDigest(user: ActiveUser): Promise<number> {
       obtain: r.obtain,
       summary: r.summary,
       title_en: r.title_en,
+      title_fa: r.title_fa,
       summary_en: r.summary_en,
+      summary_fa: r.summary_fa,
       canonicalId: r.canonical_id,
     };
     if (!passesPushFilters({ ...item, sourceId: r.source_id }, s)) continue;
@@ -942,7 +950,9 @@ export function previewUserPush(userId: number, limit = 6): {
     title: string;
     summary: string | null;
     title_en: string | null;
+    title_fa: string | null;
     summary_en: string | null;
+    summary_fa: string | null;
     url: string;
     category: string | null;
     kind: string | null;
@@ -956,7 +966,7 @@ export function previewUserPush(userId: number, limit = 6): {
     ai: string | null;
     canonical_id: number | null;
   }>(
-    `SELECT id, source_id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain,
+    `SELECT id, source_id, title, summary, title_en, summary_en, title_fa, summary_fa, url, category, kind, score, codes, price, is_free, obtain,
             expires_at, published_at, ai, canonical_id
        FROM items WHERE status = 'active' AND NOT EXISTS (
          SELECT 1 FROM user_push_deliveries d WHERE d.user_id = ? AND d.item_id = items.id AND d.status = 'sent'
@@ -1006,7 +1016,9 @@ export function previewUserPush(userId: number, limit = 6): {
       obtain: r.obtain,
       summary: r.summary,
       title_en: r.title_en,
+      title_fa: r.title_fa,
       summary_en: r.summary_en,
+      summary_fa: r.summary_fa,
       canonicalId: r.canonical_id,
     };
     const reason = checkReason({ ...item, sourceId: r.source_id }, s);
@@ -1089,7 +1101,9 @@ export async function dispatchUserPushByIds(sourceId: string, itemIds: readonly 
     title: string;
     summary: string | null;
     title_en: string | null;
+    title_fa: string | null;
     summary_en: string | null;
+    summary_fa: string | null;
     url: string;
     category: string | null;
     kind: string | null;
@@ -1103,7 +1117,7 @@ export async function dispatchUserPushByIds(sourceId: string, itemIds: readonly 
     ai: string | null;
     canonical_id: number | null;
   }>(
-    "SELECT id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, ai, canonical_id " +
+    "SELECT id, title, summary, title_en, summary_en, title_fa, summary_fa, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, ai, canonical_id " +
       "FROM items WHERE id IN (" + ph + ") AND status = 'active'",
     ...itemIds,
   );
@@ -1132,7 +1146,9 @@ export async function dispatchUserPushByIds(sourceId: string, itemIds: readonly 
       obtain: r.obtain,
       summary: r.summary,
       title_en: r.title_en,
+      title_fa: r.title_fa,
       summary_en: r.summary_en,
+      summary_fa: r.summary_fa,
       canonicalId: r.canonical_id,
     };
   });

@@ -5,9 +5,9 @@ import { hasValueSignal, isNoiseTitle } from "./enrich/noise.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { getPushSettings, passesPushFilters, sourceLabel } from "./push.ts";
 import { sendTelegram } from "./telegram.ts";
-import { displayTitle, hydrateTranslations } from "./enrich/translate.ts";
+import { displayTitle, displayTitleFa, hydrateTranslations } from "./enrich/translate.ts";
 import { passesInterest } from "./enrich/interest.ts";
-import { packItemMessages } from "./tg-pack.ts";
+import { packItemMessages, toFaDigits } from "./tg-pack.ts";
 import { buildHotReport } from "./hot.ts";
 export { sendTelegram };
 export type DigestItem = {
@@ -142,8 +142,8 @@ function digestFooter(): string {
 function digestHeaderFor(count: number, date: Date): (part: number, parts: number) => string {
   const label = `${date.getMonth() + 1}/${date.getDate()}`;
   return (part, parts) => {
-    const tail = parts > 1 ? ` (${part}/${parts})` : "";
-    return "🛰 Radar · " + label + " — " + count + " items" + tail;
+    const tail = parts > 1 ? ` (${toFaDigits(part)}/${toFaDigits(parts)})` : "";
+    return "🛰 رادار · " + label + " — " + toFaDigits(count) + " مورد" + tail;
   };
 }
 
@@ -153,7 +153,7 @@ function digestHeaderFor(count: number, date: Date): (part: number, parts: numbe
  * titles are trimmed in stages before the list is ever split.
  */
 export function buildDigestMessages(items: DigestItem[], date = new Date()): string[] {
-  const picks = items.map((it) => ({ title: displayTitle(it), url: it.url }));
+  const picks = items.map((it) => ({ title: displayTitleFa(it), url: it.url }));
   const footer = digestFooter();
   const packed = packItemMessages(
     picks,
@@ -165,7 +165,7 @@ export function buildDigestMessages(items: DigestItem[], date = new Date()): str
 
 export function formatDigest(items: DigestItem[], date = new Date()): string {
   const label = `${date.getMonth() + 1}/${date.getDate()}`;
-  if (!items.length) return "🛰 Resource Radar · " + label + "\n\nNo new claimable resources today, see you tomorrow.";
+  if (!items.length) return "🛰 رادار منابع · " + label + "\n\nامروز مورد رایگانی پیدا نشد؛ فردا می‌بینمت.";
   return buildDigestMessages(items, date).join("\n\n");
 }
 
@@ -176,8 +176,8 @@ export async function runDaily(options: { dryRun?: boolean; date?: Date; log?: (
   const date = options.date ?? new Date();
   const key = dayKey(date);
   const items = pickDaily(date);
-  // The digest is the main English surface: make sure the picks are rendered in English
-  // even for items collected minutes before this run.
+  // The digest is the main Telegram surface: make sure the picks carry their Persian
+  // rendering even for items collected minutes before this run (falls back to English).
   await hydrateTranslations(items, { max: 40, timeoutMs: 45_000 });
   const messages = buildDigestMessages(items, date);
   const text = messages.join("\n\n");
@@ -310,8 +310,8 @@ export function formatWeekly(items: DigestItem[], date = new Date()): string {
   const end = new Date(date);
   const start = new Date(end.getTime() - (WEEK_DAYS - 1) * 86_400_000);
   const range = shortDate(dayKey(start)) + " ~ " + shortDate(dayKey(end));
-  const head = "🛰 Resource Radar · Weekly picks (" + range + ")";
-  if (!items.length) return head + "\n\nNo new claimable resources this week, see you next week.";
+  const head = "🛰 رادار منابع · برگزیده‌های هفته (" + range + ")";
+  if (!items.length) return head + "\n\nاین هفته مورد رایگانی پیدا نشد؛ هفتهٔ بعد می‌بینمت.";
 
   const hot = buildHotReport(WEEK_DAYS * 24).words.slice(0, 6).map((w) => w.w);
   const byCategory = new Map<string, number>();
@@ -325,9 +325,9 @@ export function formatWeekly(items: DigestItem[], date = new Date()): string {
     .map(([k, n]) => k + " " + n)
     .join(" · ");
 
-  const lines = [head, items.length + " items · only AI-confirmed freebies that have not expired", ""];
-  if (hot.length) lines.push("🔥 Hot words this week: " + hot.join(" · "));
-  if (catLine) lines.push("📊 Category distribution: " + catLine);
+  const lines = [head, toFaDigits(items.length) + " مورد · فقط موارد تأییدشده که منقضی نشده‌اند", ""];
+  if (hot.length) lines.push("🔥 کلمات داغ این هفته: " + hot.join(" · "));
+  if (catLine) lines.push("📊 توزیع دسته‌ها: " + catLine);
   lines.push("");
 
   items.forEach((it, i) => {
@@ -335,12 +335,12 @@ export function formatWeekly(items: DigestItem[], date = new Date()): string {
     const kindTag = it.kind && it.kind !== "freebie" && it.kind !== "noise" ? KIND_LABEL[it.kind as ContentKind] : null;
     const exp = daysLeft(it.expires_at);
     const meta = [sourceLabel(it.source_id), kindTag, cat, exp].filter(Boolean).join(" · ");
-    lines.push(i + 1 + ". " + displayTitle(it).slice(0, 100));
+    lines.push(toFaDigits(i + 1) + ". " + displayTitleFa(it).slice(0, 100));
     lines.push("   " + meta);
     lines.push("   " + it.url);
     lines.push("");
   });
-  lines.push("Source: Resource Radar multi-source aggregation");
+  lines.push("منبع: تجمیع چندمنبعی رادار منابع");
   return lines.join("\n");
 }
 

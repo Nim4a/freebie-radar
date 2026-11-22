@@ -5,12 +5,12 @@ import { mergeKey, TitleDeduper, type DedupeEntry } from "./enrich/index.ts";
 import { hasValueSignal, URGENT } from "./enrich/noise.ts";
 import { filterPushDuplicatesWithAi, type DedupCandidate } from "./enrich/ai-dedup.ts";
 import { getAiSettings } from "./enrich/ai-settings.ts";
-import { displayTitle, hydrateTranslations } from "./enrich/translate.ts";
+import { displayTitleFa, hydrateTranslations } from "./enrich/translate.ts";
 import { KIND_LABEL, type ContentKind } from "./enrich/kind.ts";
 import { OBTAIN_LABEL } from "./enrich/obtain.ts";
 import { isBlocked, loadActiveBlockRules } from "./enrich/blocklist.ts";
 import { passesInterest } from "./enrich/interest.ts";
-import { packItemMessages } from "./tg-pack.ts";
+import { packItemMessages, toFaDigits } from "./tg-pack.ts";
 import { sendTelegram } from "./telegram.ts";
 import type { FreshItem } from "./collectors/index.ts";
 import { CATEGORY_SET, KIND_ORDER, OBTAIN_SET } from "../shared/taxonomy.ts";
@@ -523,8 +523,8 @@ function fmtDeadline(item: FreshItem): string | null {
   if (Number.isNaN(t)) return null;
   const days = Math.ceil((t - Date.now()) / 86_400_000);
   if (days < 0) return null;
-  if (days === 0) return "Ends today";
-  if (days <= 14) return days + " days left";
+  if (days === 0) return "امروز آخرین روز";
+  if (days <= 14) return toFaDigits(days) + " روز مانده";
   return null;
 }
 
@@ -805,14 +805,14 @@ export function itemBlock(sourceId: string, it: FreshItem, s: PushSettings, seq?
     const dl = fmtDeadline(it);
     if (dl) meta.push(dl);
   }
-  if (subHits.length) meta.push("Subs: " + subHits.join("/"));
+  if (subHits.length) meta.push("اشتراک: " + subHits.join("/"));
   if (detectLang(it.title) === "en" && s.langMode === "all") meta.push("EN");
-  if (s.includeScore && it.score) meta.push(Math.round(it.score) + " pts");
+  if (s.includeScore && it.score) meta.push(toFaDigits(Math.round(it.score)) + " امتیاز");
 
-  lines.push(prefix + displayTitle(it).slice(0, 110));
+  lines.push(prefix + displayTitleFa(it).slice(0, 110));
   lines.push("   " + meta.join(" · "));
   if (s.includeAiReason && it.aiReason) lines.push("   💡 " + it.aiReason);
-  if (it.codes.length) lines.push("   Code: " + it.codes.join(" / "));
+  if (it.codes.length) lines.push("   کد: " + it.codes.join(" / "));
   lines.push("   " + it.url);
   return lines;
 }
@@ -916,12 +916,12 @@ export async function pushInstant(sourceId: string, fresh: FreshItem[]): Promise
   if (!picked.length) return 0;
 
   // ONE message for the whole round: the user wants a single clickable list, not a ping per item.
-  const headerBase = picked[0]?.route?.header || s.customHeader || "⚡ New";
+  const headerBase = picked[0]?.route?.header || s.customHeader || "⚡ تازه";
   const footer = config.publicBaseUrl ? "🔗 " + config.publicBaseUrl : "";
   const messages = packItemMessages(
-    picked.map(({ it }) => ({ title: displayTitle(it), url: it.url })),
+    picked.map(({ it }) => ({ title: displayTitleFa(it), url: it.url })),
     (part, parts) =>
-      headerBase + " · " + picked.length + (picked.length === 1 ? " item" : " items") +
+      headerBase + " · " + toFaDigits(picked.length) + " مورد" +
       (parts > 1 ? ` (${part}/${parts})` : ""),
     footer ? () => footer : undefined,
   );
@@ -969,9 +969,11 @@ published_at: string | null;
     ai: string | null;
     canonical_id: number | null;
     title_en: string | null;
+    title_fa: string | null;
     summary_en: string | null;
+    summary_fa: string | null;
   }>(
-    `SELECT id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, ai, canonical_id
+    `SELECT id, title, summary, title_en, summary_en, title_fa, summary_fa, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, ai, canonical_id
        FROM items
       WHERE id IN (${ph}) AND status = 'active' AND pushed_at IS NULL`,
     ...itemIds,
@@ -1003,7 +1005,9 @@ published_at: string | null;
       obtain: r.obtain,
       summary: r.summary,
       title_en: r.title_en,
+      title_fa: r.title_fa,
       summary_en: r.summary_en,
+      summary_fa: r.summary_fa,
       canonicalId: r.canonical_id,
     };
   });
@@ -1050,9 +1054,11 @@ status: string;
     ai: string | null;
     canonical_id: number | null;
     title_en: string | null;
+    title_fa: string | null;
     summary_en: string | null;
+    summary_fa: string | null;
   }>(
-    `SELECT id, source_id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, pushed_at, status, ai, canonical_id
+    `SELECT id, source_id, title, summary, title_en, summary_en, title_fa, summary_fa, url, category, kind, score, codes, price, is_free, obtain, expires_at, published_at, pushed_at, status, ai, canonical_id
        FROM items WHERE id IN (${ph})`,
     ...ids,
   );
@@ -1091,7 +1097,9 @@ status: string;
       obtain: r.obtain,
       summary: r.summary,
       title_en: r.title_en,
+      title_fa: r.title_fa,
       summary_en: r.summary_en,
+      summary_fa: r.summary_fa,
       canonicalId: r.canonical_id,
     };
     if (!passesPushFilters({ ...fresh, sourceId: r.source_id }, s)) continue;
@@ -1140,14 +1148,14 @@ status: string;
 
   const footer = config.publicBaseUrl ? "🔗 " + config.publicBaseUrl : "";
   let batchTitle = s.customHeader
-    ? `${s.customHeader} · ${take.length} items`
-    : `📦 ${take.length} new this round`;
+    ? `${s.customHeader} · ${toFaDigits(take.length)} مورد`
+    : `📦 ${toFaDigits(take.length)} مورد تازه در این دور`;
   if (hasRoutes) {
     const tags = [...new Set(take.map((q) => q.route?.header || q.route?.name).filter(Boolean))];
     if (tags.length) batchTitle += " · " + tags.join(" / ");
   }
   const messages = packItemMessages(
-    take.map((q) => ({ title: displayTitle(q.item), url: q.item.url })),
+    take.map((q) => ({ title: displayTitleFa(q.item), url: q.item.url })),
     (part, parts) => batchTitle + (parts > 1 ? ` (${part}/${parts})` : ""),
     footer ? () => footer : undefined,
   );
@@ -1298,9 +1306,11 @@ published_at: string | null;
     ai: string | null;
     canonical_id: number | null;
     title_en: string | null;
+    title_fa: string | null;
     summary_en: string | null;
+    summary_fa: string | null;
   }>(
-    `SELECT id, source_id, title, summary, title_en, summary_en, url, category, kind, score, codes, price, is_free, obtain, expires_at, pushed_at, published_at, ai, canonical_id
+    `SELECT id, source_id, title, summary, title_en, summary_en, title_fa, summary_fa, url, category, kind, score, codes, price, is_free, obtain, expires_at, pushed_at, published_at, ai, canonical_id
      FROM items WHERE status = 'active' AND pushed_at IS NULL AND COALESCE(published_at, first_seen_at) >= ?
      ORDER BY score DESC LIMIT 180`,
     new Date(Date.now() - lookbackHours * 3_600_000).toISOString(),
@@ -1376,7 +1386,9 @@ published_at: string | null;
       obtain: r.obtain,
       summary: r.summary,
       title_en: r.title_en,
+      title_fa: r.title_fa,
       summary_en: r.summary_en,
+      summary_fa: r.summary_fa,
       canonicalId: r.canonical_id,
     };
     const reject = checkPushFilter({ ...fresh, sourceId: r.source_id }, s);

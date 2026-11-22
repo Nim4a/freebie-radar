@@ -25,6 +25,13 @@ function cleanTitle(title: string): string {
   return raw || "(untitled)";
 }
 
+const FA_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
+
+/** Persian digits for the Telegram surfaces — a Latin "12" next to Persian text reads as a defect. */
+export function toFaDigits(n: number | string): string {
+  return String(n).replace(/[0-9]/g, (d) => FA_DIGITS[Number(d)] ?? d);
+}
+
 function titleFor(title: string, cap: number): string {
   const raw = cleanTitle(title);
   if (raw.length <= cap) return raw;
@@ -33,7 +40,7 @@ function titleFor(title: string, cap: number): string {
 
 function linkLine(item: PackItem, index: number, cap: number): string {
   const url = htmlEscape(item.url || "").replace(/"/g, "&quot;");
-  return index + '. <a href="' + url + '">' + htmlEscape(titleFor(item.title, cap)) + "</a>";
+  return toFaDigits(index) + '. <a href="' + url + '">' + htmlEscape(titleFor(item.title, cap)) + "</a>";
 }
 
 /** Only the visible text counts against Telegram's cap: "N. title" */
