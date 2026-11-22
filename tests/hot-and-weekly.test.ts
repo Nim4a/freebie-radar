@@ -120,7 +120,7 @@ test("runWeekly & /api/digests/weekly：生成周报落库并区分 kind，且�
   run("DELETE FROM digests");
   const now = new Date();
   const iso = now.toISOString();
-  const id1 = insertItem({ sourceId: "epic-free", title: "本周必抢：免费领取《星空测试》", category: "game", score: 92, aiKeep: 1, aiQuality: 5, publishedAt: iso });
+  const id1 = insertItem({ sourceId: "epic-free", title: "本周必抢：免费领取《星空测试》", category: "ai", score: 92, aiKeep: 1, aiQuality: 5, publishedAt: iso });
   insertItem({ sourceId: "linuxdo-welfare", title: "AI 编码助手免费 Pro 会员 30 天", category: "ai", score: 88, aiKeep: 1, aiQuality: 4, publishedAt: iso });
 
   const res = await app.request("/api/digests/weekly", { method: "POST" });
@@ -128,7 +128,7 @@ test("runWeekly & /api/digests/weekly：生成周报落库并区分 kind，且�
   const weekly = (await res.json()) as { date: string; count: number; text: string };
   assert.equal(weekly.date, weekKey(now));
   assert.equal(weekly.count, 2);
-  assert.ok(weekly.text.includes("本周精选"));
+  assert.ok(weekly.text.includes("برگزیده‌های هفته"));
 
   const list = lastDigests(10);
   assert.equal(list[0]?.date, weekly.date);

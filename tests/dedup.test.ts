@@ -98,15 +98,15 @@ test("TitleDeduper：跨日 seed 命中英文版时，后续中文与双语版�
 test("pickDaily：同轮多个来源报道《斗阵骑士》只保留 1 条并自动顺延补足条数", () => {
   const now = new Date().toISOString();
   const sample = [
-    { id: 1, src: "linuxdo-welfare", cat: "other", score: 88, title: "智谱的coding plan免费送【7天体验卡】" },
-    { id: 2, src: "rss-ithome", cat: "game", score: 85, title: "Epic 喜加一：《斗阵骑士 Knightica》游戏免费领取" },
-    { id: 3, src: "rss-nodeseek", cat: "other", score: 82, title: "免费1GB流量eSIM 大陆可以用 多地区 🈚aff" },
-    { id: 4, src: "linuxdo-welfare", cat: "other", score: 80, title: "众安银行lv2拼团，免费领实体卡攻略" },
+    { id: 1, src: "linuxdo-welfare", cat: "ai", score: 88, title: "智谱的coding plan免费送【7天体验卡】" },
+    { id: 2, src: "rss-ithome", cat: "ai", score: 85, title: "喜加一:《云雀 CloudLark》AI 编程额度免费领取" },
+    { id: 3, src: "rss-nodeseek", cat: "cloud", score: 82, title: "免费1GB 对象存储额度 多地区可用 無aff" },
+    { id: 4, src: "linuxdo-welfare", cat: "domain", score: 80, title: "免费领取 .com 域名 1 年,Namesilo 优惠码" },
     { id: 5, src: "rss-nodeseek", cat: "ai", score: 78, title: "《AFF》天翼的免费云电脑，8G+4核，竟然是Windows的" },
-    { id: 6, src: "rss-smzdm", cat: "game", score: 76, title: "Epic《斗阵骑士》免费领，11月20日0点截止" },
-    { id: 7, src: "rss-keylol", cat: "game", score: 74, title: "【Epic移动版】《斗阵骑士》本周免费领取" },
-    { id: 8, src: "rss-keylol", cat: "game", score: 72, title: "【gamesforfarm】完成任务免费领取《Milf City》" },
-    { id: 9, src: "steam-free", cat: "game", score: 70, title: "Steam 免费领取《Flotsam》游戏本体" },
+    { id: 6, src: "rss-smzdm", cat: "ai", score: 76, title: "《云雀 CloudLark》免费领,11月20日0点截止" },
+    { id: 7, src: "rss-keylol", cat: "ai", score: 74, title: "【官方】《云雀 CloudLark》本周免费领取" },
+    { id: 8, src: "rss-keylol", cat: "vps", score: 72, title: "【任务】完成注册免费领取共享云主机 1 个月" },
+    { id: 9, src: "v2ex-free", cat: "cloud", score: 70, title: "免费领取 1 核 2G 云服务器 1 年,限时" },
     { id: 10, src: "v2ex-free", cat: "cloud", score: 68, title: "免费领取 Cloudflare R2 10GB 永久额度" },
   ];
 
@@ -132,15 +132,15 @@ test("pickDaily：同轮多个来源报道《斗阵骑士》只保留 1 条并�
   const picked = pickDaily(new Date(), 8);
   assert.equal(picked.length, 8);
   const pickedIds = picked.map((p) => p.id);
-  // 2、6、7 同属《斗阵骑士》，只保留高分 #2，自动顺延补进 #9 与 #10
+  // 2、6、7 同属《云雀 CloudLark》,只保留高分 #2,自动顺延补进 #9 与 #10
   assert.deepEqual(pickedIds, [1, 2, 3, 4, 5, 8, 9, 10]);
 
-  // 昨日日报如果已经发过英文版 Knightica，今日再挑精选时 2/6/7 应全部跳过
+  // 昨日日报如果已经发过英文版 CloudLark,今日再挑精选时 2/6/7 应全部跳过
   const yesterday = new Date(Date.now() - 86_400_000);
   const yDay = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
   run(
     `INSERT INTO items (id, source_id, external_id, url, url_key, title, title_key, category, score, published_at, status, is_free, obtain, first_seen_at, last_seen_at)
-     VALUES (99, 'epic-free', '99', 'https://example.com/99', 'example.com/99', 'Knightica is free on Epic Games Store', 'knightica', 'game', 90, ?, 'active', 1, 'free', ?, ?)`,
+     VALUES (99, 'v2ex-free', '99', 'https://example.com/99', 'example.com/99', '《云雀 CloudLark》is free on the vendor site', 'cloudlark', 'ai', 90, ?, 'active', 1, 'free', ?, ?)`,
     yesterday.toISOString(),
     yesterday.toISOString(),
     yesterday.toISOString(),

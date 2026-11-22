@@ -598,7 +598,15 @@ export function migrate(): number {
   const row = conn.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
   const current = Number(row?.user_version ?? 0);
   for (let v = current; v < MIGRATIONS.length; v += 1) {
-    conn.exec(MIGRATIONS[v]!);
+    try {
+      conn.exec(MIGRATIONS[v]!);
+    } catch (err) {
+      /* Additive migrations are not idempotent by nature (SQLite has no ADD COLUMN IF NOT EXISTS), and a
+         database restored from a snapshot can sit at a user_version older than its own schema. "duplicate
+         column name" therefore means the column this migration adds already exists — exactly the state we
+         want, so it is not an error. Anything else still throws. */
+      if (!/duplicate column name/i.test(String((err as Error)?.message ?? err))) throw err;
+    }
     conn.exec(`PRAGMA user_version = ${v + 1}`);
   }
   return Math.max(current, MIGRATIONS.length);

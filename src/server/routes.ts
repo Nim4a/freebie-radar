@@ -2104,7 +2104,7 @@ const fetchLimit = Math.min(Math.max(offset + limit * 3, 240), 600);
     const { where, params } = buildItemsQuery({ ...q, status: q.status ?? "active" }, rules, false, scope);
     const clause = where.length ? "WHERE " + where.join(" AND ") : "";
     return all<RssItem>(
-      "SELECT id, source_id, title, title_en, summary, summary_en, content, category, kind, score, price, is_free, obtain, codes, " +
+      "SELECT id, source_id, title, title_en, summary, summary_en, url, content, category, kind, score, price, is_free, obtain, codes, " +
         "published_at, first_seen_at, expires_at, image_url, ai FROM items " + clause +
         " ORDER BY COALESCE(published_at, first_seen_at) DESC LIMIT ?",
       ...params,

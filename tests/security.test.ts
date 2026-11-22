@@ -43,7 +43,7 @@ before(async () => {
   }
   for (const [id, title] of [[1, "免费领取软件永久许可证"], [2, "免费领取域名"]] as const) {
     run(`INSERT INTO items(id,source_id,external_id,url,url_key,title,title_key,category,kind,score,is_free,obtain,status,content,summary,first_seen_at,last_seen_at,published_at)
-         VALUES(?,'test',?,'https://example.com/'||?,'example.com/'||?,?,?,'software','freebie',95,1,'free','active',?,?, ?,?,?)`,
+         VALUES(?,'test',?,'https://example.com/'||?,'example.com/'||?,?,?,'ai','freebie',95,1,'free','active',?,?, ?,?,?)`,
       id, String(id), id, id, title, `title-${id}`, "正文".repeat(10000), "简短摘要", stamp, stamp, stamp);
   }
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
@@ -256,7 +256,7 @@ test("个人预览受每轮额度限制，已发送内容不再次显示为待�
   const uid = userIds[0]!;
   for (const id of [3, 4]) run(
     `INSERT INTO items(id,source_id,external_id,url,url_key,title,title_key,category,kind,score,is_free,obtain,status,first_seen_at,last_seen_at,published_at)
-     VALUES(?,'test',?,'https://example.com/'||?,'example.com/'||?,?,'preview'||?,'software','freebie',95,1,'free','active',?,?,?)`,
+     VALUES(?,'test',?,'https://example.com/'||?,'example.com/'||?,?,'preview'||?,'ai','freebie',95,1,'free','active',?,?,?)`,
     id, `preview-${id}`, id, id, `免费领取 Preview ${id}`, id, stamp, stamp, stamp,
   );
   saveUserPushConfig(uid, { dedupeByTitle: false, instantScore: 0, batchScore: 0, maxPerInstant: 1, quietEnabled: false });

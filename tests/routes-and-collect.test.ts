@@ -484,7 +484,7 @@ test("推送策略：AI 兜底模式、时效/开关/阈值联动、preview 拦�
   const now = new Date().toISOString();
   run(
     `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, category, score, published_at, status, is_free, obtain, ai, ai_keep, first_seen_at, last_seen_at)
-     VALUES ('steam-free', 'ai-true-1', 'https://store.steampowered.com/app/123', 'steam/123', 'Portal 2 Giveaway Weekend', 'portal2', 'game', 72, ?, 'active', 1, 'free', '{"keep":true,"reason":"Steam 限免入库"}', 1, ?, ?)`,
+     VALUES ('steam-free', 'ai-true-1', 'https://store.steampowered.com/app/123', 'steam/123', 'Portal 2 Giveaway Weekend', 'portal2', 'ai', 72, ?, 'active', 1, 'free', '{"keep":true,"reason":"Steam 限免入库"}', 1, ?, ?)`,
     now, now, now,
   );
   run(
@@ -719,7 +719,7 @@ test("多兴趣频道重构：kind 分流、取消 paid 25分封顶、放行好�
   run(
     `INSERT INTO items (source_id, external_id, url, url_key, title, title_key, category, kind, score, price, is_free, obtain, ai, ai_keep, ai_quality, published_at, status, first_seen_at, last_seen_at)
      VALUES ('rss-lowendbox', 'bf-1', 'https://lowendbox.com/bf-1', 'leb/bf1', '[黑五特惠] RackNerd KVM VPS 年付 $10.99', 'racknerd bf', 'cloud', 'deal', 82, 78, 0, 'paid', '{"keep":true,"kind":"deal","quality":5,"reason":"黑五神价VPS"}', 1, 5, ?, 'active', ?, ?),
-            ('linuxdo-resource', 'os-2', 'https://github.com/acme/radar', 'gh/radar', '开源自托管面板 v2.1 (MIT)', 'acme radar', 'opensource', 'opensource', 76, NULL, 1, 'free', '{"keep":true,"kind":"opensource","quality":4,"reason":"实用开源面板"}', 1, 4, ?, 'active', ?, ?)`,
+            ('linuxdo-resource', 'os-2', 'https://github.com/acme/radar', 'gh/radar', '开源自托管面板 v2.1 (MIT)', 'acme radar', 'cloud', 'opensource', 76, NULL, 1, 'free', '{"keep":true,"kind":"opensource","quality":4,"reason":"实用开源面板"}', 1, 4, ?, 'active', ?, ?)`,
     now, now, now, now, now, now,
   );
 
